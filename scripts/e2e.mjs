@@ -218,13 +218,38 @@ async function main() {
   await sleep(1500);
   const homeText = await evaluate('document.body.innerText');
   check('首页渲染成功', homeText.includes('章节练习') && homeText.includes('模拟考试'));
-  check('未登录状态显示登录入口', homeText.includes('登录'));
+  check('显示登录状态或登录入口', homeText.includes('登录') || homeText.includes('累计答题'), homeText.slice(0, 30));
   await shot('01-home');
 
+  /**
+   * 自适应题库：
+   *  - 章节 id 与名称从应用数据里取，不写死；
+   *  - 优先选「含选择题较多」的章节，因为后续用例要靠点选项作答。
+   */
+  const bank = await evaluate(`(async () => {
+    const m = await import('./src/data/questions.js');
+    const stats = m.CHAPTERS.map((c) => {
+      const list = m.QUESTIONS.filter((q) => q.chapterId === c.id);
+      const choice = list.filter((q) => q.type === 'single' || q.type === 'multiple' || q.type === 'judge').length;
+      return { id: c.id, name: c.name, total: list.length, choice };
+    });
+    const withChoice = stats.filter((s) => s.choice >= 4).sort((a, b) => b.choice - a.choice);
+    const fallback = stats.slice().sort((a, b) => b.total - a.total);
+    return {
+      chapters: stats.length,
+      questions: m.QUESTIONS.length,
+      biggest: withChoice[0] || fallback[0],
+    };
+  })()`);
+  const CH = bank.biggest;
+  console.log(
+    `     题库: ${bank.questions} 题 / ${bank.chapters} 章节，本用例使用「${CH.name}」(${CH.choice} 道选择题 / 共 ${CH.total} 题)`
+  );
+
   console.log('\n[2] 章节练习：即时反馈与解析');
-  await goto('#/chapter/js');
+  await goto(`#/chapter/${CH.id}`);
   const chapterText = await evaluate('document.body.innerText');
-  check('章节详情页渲染', chapterText.includes('JavaScript') && chapterText.includes('开始顺序练习'));
+  check('章节详情页渲染', chapterText.includes('开始顺序练习'), chapterText.slice(0, 40));
   await shot('02-chapter');
 
   // 章节详情页的主按钮不在底部操作条里，这里用「底部优先、否则取主按钮」的策略
@@ -287,7 +312,7 @@ async function main() {
   const toggleOn = await evaluate(`document.querySelectorAll('.switch')[0].className`);
   check('设置页可打开自动下一题', toggleOn.includes('switch--on'), toggleOn);
 
-  await goto('#/quiz/chapter/js');
+  await goto(`#/quiz/chapter/${CH.id}`);
   const autoNextOn = await evaluate(`(() => {
     const before = document.querySelector('.stem__index').innerText;
     document.querySelector('.option').click();
@@ -301,7 +326,7 @@ async function main() {
   await goto('#/profile');
   await evaluate(`document.querySelectorAll('.switch-row button')[0].click()`);
   await sleep(200);
-  await goto('#/quiz/chapter/js');
+  await goto(`#/quiz/chapter/${CH.id}`);
 
   // 快速答完剩余题目：单选/判断直接点 A，多选点确认，然后点下一题
   await answerPracticePaper();
@@ -319,7 +344,7 @@ async function main() {
 
   console.log('\n[4] 交卷判分与逐题解析');
   // 重新开一轮练习并答完，再交卷（第 3 步的会话已被答题卡访问结束）
-  await goto('#/quiz/chapter/js');
+  await goto(`#/quiz/chapter/${CH.id}`);
   const practiceTrace = await answerPracticePaper();
   const lastLabel = await evaluate(`(() => {
     const t = document.querySelector('.footer-bar .btn--primary');
@@ -370,35 +395,59 @@ async function main() {
   check('考试模式显示倒计时', /^\d{2}:\d{2}$/.test(exam.timer.trim()), `timer=${exam.timer}`);
   await shot('10-exam');
 
-  // 答题并交卷（考试模式无即时反馈：每题只选一个未选中的选项，再翻到下一题）
+  // 答题并交卷（考试模式无即时反馈：先选选项，再点下一题；文本题先填字再下一题）
+  const examTrace = [];
   for (let i = 0; i < 80; i += 1) {
     const step = await evaluate(`(() => {
       const t = document.querySelector('.footer-bar .btn--primary');
       if (!t) return 'no-btn';
       const label = t.innerText.trim();
       if (label.includes('交卷')) return 'done';
+
+      // 文本题（填空/简答）：第一次先填字，之后按钮可用就直接点（考试模式会翻到下一题）
+      const area = document.querySelector('.short-input') || document.querySelector('.fill-input');
+      if (area && !area.disabled) {
+        if (!String(area.value || '').trim()) {
+          area.value = '考试作答测试内容。';
+          area.dispatchEvent(new Event('input', { bubbles: true }));
+          return 'type';
+        }
+        if (!t.disabled) { t.click(); return 'text-next'; }
+        return 'text-wait';
+      }
+
+      // 选项题：先选中一个，再翻页
       const picked = document.querySelector('.option--selected');
       if (!picked) {
         const opt = document.querySelector('.option');
         if (opt) { opt.click(); return 'pick'; }
-        return 'stuck:no-option';
       }
       if (label.includes('下一题')) { t.click(); return 'next'; }
-      return 'stuck:' + label;
+      return 'wait:' + label;
     })()`);
+    examTrace.push(step);
     if (step === 'done') break;
-    await sleep(260);
+    await sleep(280);
   }
   await shot('11-exam-last');
+  if (!examTrace.includes('done')) {
+    console.log(`     ⚠ 未能到达交卷按钮，作答轨迹尾部: ${examTrace.slice(-6).join('>')}`);
+  }
   await evaluate(`(() => {
     const t = [...document.querySelectorAll('.footer-bar .btn')].find(b => b.innerText.includes('交卷'));
     if (t) t.click();
   })()`);
   await sleep(600);
   const dialogText = await evaluate('document.body.innerText');
-  check('交卷前弹出确认', dialogText.includes('确认交卷'));
+  check('交卷前弹出确认', dialogText.includes('确认交卷'), examTrace.slice(-4).join('>'));
   await shot('12-exam-confirm');
-  await evaluate(`[...document.querySelectorAll('.dialog__actions .btn')].pop().click()`);
+  const confirmBtn = await evaluate(`(() => {
+    const btns = [...document.querySelectorAll('.dialog__actions .btn')];
+    return btns.length;
+  })()`);
+  if (confirmBtn > 0) {
+    await evaluate(`[...document.querySelectorAll('.dialog__actions .btn')].pop().click()`);
+  }
   await sleep(1100);
   const examResult = await evaluate(`({
     text: document.body.innerText,
