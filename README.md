@@ -44,7 +44,7 @@ npm run dev            # 等价于 node scripts/serve.mjs，默认 5173 端口
 | `npm run dev -- 8080` | 指定端口 |
 | `npm run dev -- 8080 --local` | 只监听回环，仅本机可访问 |
 | `npm run dev -- 8080 --mock` | 额外开启 `/api/*` 模拟接口，验证「远端数据模式」 |
-| `npm run check` | 题库 + 判分引擎自测（33 项断言，无需浏览器） |
+| `npm run check` | 题库 + 判分引擎自测（36 项断言，无需浏览器） |
 | `npm run wechat` | 启动微信登录后端示例（见第五节） |
 | `node scripts/e2e.mjs http://localhost:5173` | 用本机 Edge/Chrome 无头模式跑完整流程并截图 |
 
@@ -237,12 +237,15 @@ WECHAT_APPID=wx... WECHAT_SECRET=... WEB_ORIGIN=http://localhost:5173 npm run we
 ## 七、测试与验证
 
 ```bash
-npm run check      # 题库结构与判分引擎：33 项断言
+npm run check      # 题库结构与判分引擎：36 项断言
 ```
 
 覆盖：题目 id 唯一性、字段完整性、答案与题型匹配（单选 1 项、多选 ≥2 项、判断 2 选 1）、
 选项字母范围、章节统计一致性、答案归一化（去重/排序/过滤空值）、
 章节与难度筛选、错题重练取题、全对/全错/全空的边界判分。
+
+> 判分断言使用**固定题号组卷**而非随机抽题：题库里存在“所有选项都正确”的多选题
+> （如 js-05、web-11、css-04），随机抽到就构造不出全错答案，会让断言偶发失败。
 
 ```bash
 node scripts/e2e.mjs http://localhost:5173
@@ -255,7 +258,7 @@ node scripts/e2e.mjs http://localhost:5173
 最近一次实测结果：
 
 ```
-题库 + 引擎自测：33 通过, 0 失败
+题库 + 引擎自测：36 通过, 0 失败
 端到端验证：    27 通过, 0 失败（页面无 JS 报错）
 ```
 
