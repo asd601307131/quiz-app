@@ -692,7 +692,7 @@ function switchRow(title, desc, value, onChange) {
       h('div.switch-row__title', { text: title }),
       h('div.switch-row__desc', { text: desc }),
     ]),
-    h('button', {
+    h('button.switch-btn', {
       type: 'button',
       'aria-label': title,
       onclick: () => {

@@ -8,6 +8,7 @@
   "background_color": "#f4f6fb",
   "theme_color": "#3b6ef5",
   "lang": "zh-CN",
+  "categories": ["education"],
   "icons": [
     {
       "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='36' fill='%233b6ef5'/%3E%3Ctext x='96' y='128' font-size='96' text-anchor='middle'%3E%F0%9F%93%9D%3C/text%3E%3C/svg%3E",

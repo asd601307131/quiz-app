@@ -372,6 +372,29 @@ node tools/audit-bank.mjs work/成考题库-政治.csv work/variants-哲学.csv 
 > 造题建议：围绕同一考点用**不同考法**出 3~5 道变型题（正问、反问「下列说法错误的是」、
 > 角度切换、概念配对、实例对应、易混区分），比机械重复更能覆盖选择题的得分点。
 
+
+### 7.2 UI 体检与主题
+
+```bash
+node scripts/ui-audit.mjs http://localhost:5213     # 排版体检 + 深色模式对比度检查
+node scripts/shot.mjs http://localhost:5213         # 浅色截图
+node scripts/shot.mjs http://localhost:5213 dark    # 深色截图
+node tools/contrast.mjs                             # 计算配色对比度（WCAG）
+```
+
+`ui-audit.mjs` 在 390×844 手机视口下逐页测量，检查项：
+
+| 检查项 | 说明 |
+| --- | --- |
+| 文本截断 | scrollWidth 超出 clientWidth 的文本节点（说明被省略号吞掉了信息） |
+| 横向溢出 | 右边界超出视口的元素（手机端出现横向滚动很难受） |
+| 触控目标 | 可点区域小于 40px 的按钮（手指容易点空） |
+| 深色对比度 | 用 `prefers-color-scheme: dark` 模拟，按 WCAG AA（4.5:1）逐元素计算文字对比度 |
+
+当前状态：**文本截断 0 · 横向溢出 0 · 触控过小 0 · 深色对比度不足 0**。
+
+**深色模式**：只覆盖 CSS 变量（颜色），布局与排版不分叉，因此浅色逻辑改一处、深色自动跟随。
+`index.html` 里用两条 `theme-color` 让状态栏也跟随主题。
 ---
 
 ## 八、部署

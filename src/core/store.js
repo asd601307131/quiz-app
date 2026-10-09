@@ -11,6 +11,7 @@ const KEYS = {
   sessions: `${NS}.sessions`, // 答题记录（成绩历史）
   wrong: `${NS}.wrong`, // 错题本：questionId -> 记录
   mastered: `${NS}.mastered`, // 已掌握：questionId -> { at }
+  ui: `${NS}.ui`, // 界面偏好（列表折叠状态等）
   stats: `${NS}.stats`, // 累计统计
   settings: `${NS}.settings`,
 };
@@ -298,7 +299,7 @@ function bumpStats(entry) {
 }
 
 export function resetAll() {
-  [KEYS.user, KEYS.sessions, KEYS.wrong, KEYS.mastered, KEYS.stats, KEYS.settings].forEach((k) => {
+  [KEYS.user, KEYS.sessions, KEYS.wrong, KEYS.mastered, KEYS.ui, KEYS.stats, KEYS.settings].forEach((k) => {
     if (canUseLS) window.localStorage.removeItem(k);
     memory.delete(k);
   });
@@ -330,6 +331,22 @@ export function saveSettings(patch) {
   writeRaw(KEYS.settings, next);
   emit('settings', next);
   return next;
+}
+
+/* ------------------------------------------------------------------ */
+/* 界面偏好（折叠状态等，与业务设置分开存，避免污染设置项）             */
+/* ------------------------------------------------------------------ */
+
+export function getSetting(key, fallback = null) {
+  const all = readRaw(KEYS.ui, {});
+  return Object.prototype.hasOwnProperty.call(all, key) ? all[key] : fallback;
+}
+
+export function setSetting(key, value) {
+  const all = readRaw(KEYS.ui, {});
+  all[key] = value;
+  writeRaw(KEYS.ui, all);
+  return value;
 }
 
 export const STORAGE_KEYS = KEYS;

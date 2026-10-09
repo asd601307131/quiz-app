@@ -140,6 +140,42 @@ async function main() {
   check('含主观题专项与历年真题分组', politics.text.includes('主观题专项') && politics.text.includes('陕西历年真题'));
   await shot('52-subject-politics');
 
+  // 分组折叠：默认只展开第一组，避免一屏铺 30+ 个条目
+  const collapse = await evaluate(`(() => {
+    const heads = [...document.querySelectorAll('.group__head')];
+    return {
+      heads: heads.length,
+      expanded: heads.filter((x) => x.getAttribute('aria-expanded') === 'true').length,
+      visibleLists: [...document.querySelectorAll('.page__body .list')].filter((l) => !l.classList.contains('is-hidden')).length,
+    };
+  })()`);
+  check('分组可折叠且默认只展开一组', collapse.heads >= 4 && collapse.expanded === 1, `分组=${collapse.heads} 展开=${collapse.expanded}`);
+
+  // 点击第二个分组标题应展开
+  await evaluate(`(() => {
+    const heads = [...document.querySelectorAll('.group__head')];
+    if (heads[1]) heads[1].click();
+  })()`);
+  await sleep(700);
+  const afterExpand = await evaluate(`(() => {
+    const heads = [...document.querySelectorAll('.group__head')];
+    return {
+      expanded: heads.filter((x) => x.getAttribute('aria-expanded') === 'true').length,
+      hidden: [...document.querySelectorAll('.page__body .list')].filter((l) => l.classList.contains('is-hidden')).length,
+    };
+  })()`);
+  check('点击分组标题可展开', afterExpand.expanded === 2, `展开=${afterExpand.expanded} 折叠=${afterExpand.hidden}`);
+
+  // 再点一次应折叠回去
+  await evaluate(`(() => {
+    const heads = [...document.querySelectorAll('.group__head')];
+    if (heads[1]) heads[1].click();
+  })()`);
+  await sleep(700);
+  const afterCollapse = await evaluate(`([...document.querySelectorAll('.group__head')].filter((x) => x.getAttribute('aria-expanded') === 'true').length)`);
+  check('再次点击可折叠', afterCollapse === 1, `展开=${afterCollapse}`);
+  await shot('52b-subject-collapsed');
+
   console.log('\n[4] 英语板块');
   await goto('#/subject/english');
   const english = await evaluate(`({ text: document.body.innerText, items: document.querySelectorAll('.list__item').length })`);

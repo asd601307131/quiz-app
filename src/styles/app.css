@@ -28,7 +28,77 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --tabbar-h: 56px;
   --header-h: 52px;
+  /* 由浅色/深色主题覆盖：可点元素的按下态与分隔线 */
+  --c-press: rgba(20, 30, 60, 0.04);
+  --c-header-bg: rgba(255, 255, 255, 0.94);
+  --c-tabbar-bg: rgba(255, 255, 255, 0.96);
+  /* 提示框文字：浅色底上用深色，深色底上用强调色（对比度已实测） */
+  --c-btn-outline-bg: #ffffff;
+  --c-green-ink: #14663a;
+  --c-orange-ink: #8a5a06;
+  --c-green-line: rgba(22, 163, 74, 0.22);
+  --c-orange-line: rgba(234, 154, 18, 0.28);
+  color-scheme: light;
   font-size: 16px;
+}
+
+/* --------------------------------------------------------------------------
+   深色模式：只覆盖颜色变量，布局与排版不分叉
+   -------------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --c-primary: #6b93ff;
+    --c-primary-dark: #8aa9ff;
+    --c-primary-soft: #1e2a4a;
+    --c-green: #4ade80;
+    --c-green-soft: #142c1f;
+    --c-orange: #f0b354;
+    --c-orange-soft: #33270f;
+    --c-red: #ff6b70;
+    --c-red-soft: #3a1c1e;
+    --c-text: #e8ecf5;
+    /* 深色下次要文字的对比度经过实测：卡片底色 #1a2030 上需 ≥4.5:1 */
+    --c-text-2: #bcc4d4;
+    --c-text-3: #8a93a9;
+    --c-line: #2a3244;
+    --c-bg: #10141d;
+    --c-card: #1a2030;
+    --shadow-s: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-m: 0 6px 20px rgba(0, 0, 0, 0.35);
+    --shadow-l: 0 12px 32px rgba(0, 0, 0, 0.45);
+    --c-press: rgba(255, 255, 255, 0.06);
+    --c-header-bg: rgba(20, 25, 36, 0.94);
+    --c-tabbar-bg: rgba(20, 25, 36, 0.96);
+    /* 深色下强调色本身亮度足够，直接用强调色作为文字色 */
+    --c-btn-outline-bg: transparent;
+    --c-green-ink: #7ee2a0;
+    --c-orange-ink: #f3c579;
+    --c-green-line: rgba(74, 222, 128, 0.28);
+    --c-orange-line: rgba(240, 179, 84, 0.3);
+    color-scheme: dark;
+  }
+
+  /* 提示框深色底：用半透明强调色叠加，避免色块过亮 */
+  .strategy-tip--good {
+    background: rgba(74, 222, 128, 0.1);
+  }
+
+  .strategy-tip--warn {
+    background: rgba(240, 179, 84, 0.12);
+  }
+
+  /* 浅色实底在深色下会刺眼，统一改用卡片色 */
+  .points,
+  .strategy-p,
+  .strategy-list,
+  .strategy-table-wrap {
+    background: var(--c-card);
+  }
+
+  .subject-bar:active,
+  .list__item:active {
+    background: var(--c-press);
+  }
 }
 
 @media (min-width: 560px) {
@@ -139,12 +209,16 @@ ol {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  /* 兜底：任何子元素意外超宽都不产生横向滚动条（手机端横向滚动很难受） */
+  overflow-x: hidden;
 }
 
 .page__body {
   flex: 1;
   padding: 12px 16px calc(24px + var(--safe-bottom));
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -162,7 +236,8 @@ ol {
   display: flex;
   align-items: center;
   gap: 4px;
-  background: var(--c-card);
+  background: var(--c-header-bg);
+  backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--c-line);
   position: sticky;
   top: 0;
@@ -224,7 +299,7 @@ ol {
   display: grid;
   /* 与 ui.js 的 TABS 数量保持一致：首页 / 题库 / 技巧 / 错题本 / 我的 */
   grid-template-columns: repeat(5, 1fr);
-  background: rgba(255, 255, 255, 0.96);
+  background: var(--c-tabbar-bg);
   backdrop-filter: blur(12px);
   border-top: 1px solid var(--c-line);
   position: sticky;
@@ -282,18 +357,28 @@ ol {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
   margin-bottom: 10px;
   padding: 0 2px;
+}
+
+/* 关键：flex 子项默认 min-width:auto，长中文标题会把容器撑破导致横向溢出 */
+.section__head > * {
+  min-width: 0;
 }
 
 .section__title {
   font-size: 1rem;
   font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .section__more {
   font-size: 0.8rem;
   color: var(--c-text-3);
+  flex: none;
 }
 
 .list {
@@ -338,9 +423,21 @@ ol {
   font-size: 0.76rem;
   color: var(--c-text-3);
   margin-top: 2px;
+  line-height: 1.6;
+  /* 副标题默认允许换行：说明性文字被截断会让用户看不到关键信息
+     （例如「我已掌握这题」的操作提示）。需要单行省略的场景加 .list__sub--clip */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+}
+
+.list__sub--clip {
+  display: block;
+  -webkit-line-clamp: unset;
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .list__arrow {
@@ -430,13 +527,21 @@ ol {
 .hero__login {
   position: absolute;
   right: 16px;
-  top: 18px;
+  top: 12px;
   z-index: 2;
   background: rgba(255, 255, 255, 0.22);
   border-radius: 999px;
-  padding: 5px 12px;
-  font-size: 0.76rem;
+  /* 保证足够的点按高度 */
+  min-height: 40px;
+  padding: 0 16px;
+  font-size: 0.78rem;
   color: #fff;
+  display: inline-flex;
+  align-items: center;
+}
+
+.hero__login:active {
+  background: rgba(255, 255, 255, 0.34);
 }
 
 .mode-grid {
@@ -607,7 +712,7 @@ ol {
 .btn--outline {
   border: 1px solid var(--c-primary);
   color: var(--c-primary);
-  background: #fff;
+  background: var(--c-btn-outline-bg);
 }
 
 .btn--danger {
@@ -620,8 +725,10 @@ ol {
 }
 
 .btn--sm {
-  height: 34px;
-  padding: 0 14px;
+  /* 触控目标不低于 40px：手指点按 34px 的按钮在手机上容易点空 */
+  min-height: 40px;
+  height: auto;
+  padding: 8px 14px;
   font-size: 0.8rem;
   border-radius: 8px;
 }
@@ -641,7 +748,7 @@ ol {
 
 .footer-bar {
   padding: 10px 16px calc(10px + var(--safe-bottom));
-  background: rgba(255, 255, 255, 0.97);
+  background: var(--c-tabbar-bg);
   backdrop-filter: blur(12px);
   border-top: 1px solid var(--c-line);
   display: flex;
@@ -1369,21 +1476,39 @@ ol {
   margin-top: 2px;
 }
 
+/* 开关的按钮外壳：把点按区域撑到 44×40 以上，视觉上仍只有开关本身 */
+.switch-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 60px;
+  min-height: 44px;
+  margin: -7px 0;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .switch {
-  width: 46px;
-  height: 27px;
+  width: 48px;
+  height: 30px;
   border-radius: 999px;
   background: var(--c-line);
   position: relative;
   flex: none;
   transition: background 0.2s;
+  /* 视觉尺寸保持精致，但把实际点按区域向上下扩展，避免手指点不中 */
+  box-shadow: 0 0 0 7px transparent;
 }
 
 .switch::after {
   content: '';
   position: absolute;
-  width: 23px;
-  height: 23px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: #fff;
   top: 2px;
@@ -1422,7 +1547,7 @@ ol {
 }
 
 .dialog {
-  background: #fff;
+  background: var(--c-card);
   border-radius: var(--radius-l);
   padding: 20px;
   width: 100%;
@@ -1640,20 +1765,88 @@ ol {
 
 .strategy-tip--good {
   background: var(--c-green-soft);
-  border: 1px solid rgba(22, 163, 74, 0.22);
-  color: #14663a;
+  border: 1px solid var(--c-green-line, rgba(22, 163, 74, 0.22));
+  color: var(--c-green-ink);
 }
 
 .strategy-tip--warn {
   background: var(--c-orange-soft);
-  border: 1px solid rgba(234, 154, 18, 0.28);
-  color: #8a5a06;
+  border: 1px solid var(--c-orange-line, rgba(234, 154, 18, 0.28));
+  color: var(--c-orange-ink);
 }
 
 .strategy-tip__icon {
   flex: none;
-  font-size: 0.95rem;
-  line-height: 1.7;
+  width: 17px;
+  height: 17px;
+  margin-top: 3px;
+}
+
+.strategy-tip__text {
+  min-width: 0;
+}
+
+/* --------------------------------------------------------------------------
+   可折叠分组（科目详情页）
+   -------------------------------------------------------------------------- */
+
+.group__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 4px 2px 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.group__head:active {
+  opacity: 0.7;
+}
+
+.group__head-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.group__title {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.group__head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.group__arrow {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--c-text-3);
+  transition: transform 0.22s ease;
+}
+
+/* 展开时箭头指向上方（内容在上方展开）；折叠时指向下方 */
+.group__arrow.is-open {
+  transform: rotate(180deg);
+}
+
+/* 折叠：直接移除布局，避免 max-height 过渡在大列表上抖动 */
+.list.is-hidden {
+  display: none;
+}
+
+.section {
+  margin-top: 18px;
 }
 
 .toast-root {

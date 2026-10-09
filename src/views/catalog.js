@@ -127,41 +127,74 @@ export function SubjectView({ id }) {
 
   const p = subjectProgress(subject.id);
 
+  // 分组默认展开状态：首个分组展开、其余折叠，避免一屏铺 30+ 个条目。
+  // 用户手动展开/折叠后的状态记在 quizapp.v1.ui 里。
+  const COLLAPSE_KEY = `ui.collapsed.${subject.id}`;
+  const stored = store.getSetting(COLLAPSE_KEY, null);
+  const groupNames = subject.groups.map((g) => g.name);
+  const collapsed = new Set(
+    Array.isArray(stored) ? stored : groupNames.filter((_, i) => i > 0)
+  );
+  const saveCollapsed = () => store.setSetting(COLLAPSE_KEY, [...collapsed]);
+
   const groups = subject.groups
-    .map((group) => {
+    .map((group, groupIndex) => {
       const chapters = group.chapters.map(chapterMeta).filter(Boolean);
       if (!chapters.length) return null;
 
       const groupTotal = chapters.reduce((a, c) => a + c.total, 0);
       const groupDone = chapters.reduce((a, c) => a + c.done, 0);
+      const isOpen = !collapsed.has(group.name);
 
-      return h('section.section', null, [
-        h('div.section__head', null, [
-          h('div', null, [
-            h('h2.section__title', { text: group.name }),
+      const listNode = h(
+        'div.list' + (isOpen ? '' : '.is-hidden'),
+        null,
+        chapters.map((chapter) =>
+          h('button.list__item', { type: 'button', onclick: () => go(`chapter/${chapter.id}`) }, [
+            h('div.chapter-row__icon', { text: chapter.icon }),
+            h('div.list__main', null, [
+              h('div.list__title', { text: chapter.name }),
+              h('div.list__sub', {
+                text: `${chapter.total} 题 · 简单 ${chapter.easy} / 中等 ${chapter.medium} / 困难 ${chapter.hard}`,
+              }),
+              progressBar(chapter.percent),
+              h('div.list__sub', { text: `已练 ${chapter.done}/${chapter.total}` }),
+            ]),
+            h('span.list__arrow', { text: '›' }),
+          ])
+        )
+      );
+
+      const arrow = chevronNode(isOpen);
+
+      const head = h(
+        'button.group__head',
+        {
+          type: 'button',
+          'aria-expanded': String(isOpen),
+          onclick: () => {
+            const nowOpen = !collapsed.has(group.name);
+            if (nowOpen) collapsed.add(group.name);
+            else collapsed.delete(group.name);
+            saveCollapsed();
+            listNode.classList.toggle('is-hidden', nowOpen);
+            arrow.classList.toggle('is-open', !nowOpen);
+            head.setAttribute('aria-expanded', String(!nowOpen));
+          },
+        },
+        [
+          h('div.group__head-main', null, [
+            h('div.group__title', { text: group.name }),
             group.desc ? h('div.list__sub', { text: group.desc }) : null,
           ]),
-          h('span.tag', { text: `${groupDone}/${groupTotal}` }),
-        ]),
-        h(
-          'div.list',
-          null,
-          chapters.map((chapter) =>
-            h('button.list__item', { type: 'button', onclick: () => go(`chapter/${chapter.id}`) }, [
-              h('div.chapter-row__icon', { text: chapter.icon }),
-              h('div.list__main', null, [
-                h('div.list__title', { text: chapter.name }),
-                h('div.list__sub', {
-                  text: `${chapter.total} 题 · 简单 ${chapter.easy} / 中等 ${chapter.medium} / 困难 ${chapter.hard}`,
-                }),
-                progressBar(chapter.percent),
-                h('div.list__sub', { text: `已练 ${chapter.done}/${chapter.total}` }),
-              ]),
-              h('span.list__arrow', { text: '›' }),
-            ])
-          )
-        ),
-      ]);
+          h('div.group__head-right', null, [
+            h('span.tag', { text: `${groupDone}/${groupTotal}` }),
+            arrow,
+          ]),
+        ]
+      );
+
+      return h('section.section', null, [head, listNode]);
     })
     .filter(Boolean);
 
@@ -251,6 +284,44 @@ export function StrategyView() {
 /* 技巧条目详情                                                        */
 /* ------------------------------------------------------------------ */
 
+/** 提示框图标：用 SVG 而非 emoji——emoji 无法随主题变色，深色下对比度不可控 */
+function tipIcon(tone) {
+  const path =
+    tone === 'warn'
+      ? 'M12 3 2 20h20L12 3Zm0 5.5v5.5m0 3v.1' // 三角感叹号
+      : 'M12 3a6 6 0 0 0-3.5 10.9V17h7v-3.1A6 6 0 0 0 12 3ZM9.5 20h5'; // 灯泡
+  const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  node.setAttribute('viewBox', '0 0 24 24');
+  node.setAttribute('fill', 'none');
+  node.setAttribute('stroke', 'currentColor');
+  node.setAttribute('stroke-width', '1.8');
+  node.setAttribute('stroke-linecap', 'round');
+  node.setAttribute('stroke-linejoin', 'round');
+  node.setAttribute('class', 'strategy-tip__icon');
+  node.setAttribute('aria-hidden', 'true');
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p.setAttribute('d', path);
+  node.appendChild(p);
+  return node;
+}
+
+/** 分组折叠箭头：用 SVG 保证与列表箭头风格一致，且不依赖字体渲染 */
+function chevronNode(open) {
+  const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  node.setAttribute('viewBox', '0 0 24 24');
+  node.setAttribute('fill', 'none');
+  node.setAttribute('stroke', 'currentColor');
+  node.setAttribute('stroke-width', '2.2');
+  node.setAttribute('stroke-linecap', 'round');
+  node.setAttribute('stroke-linejoin', 'round');
+  node.setAttribute('class', 'group__arrow' + (open ? ' is-open' : ''));
+  node.setAttribute('aria-hidden', 'true');
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p.setAttribute('d', 'm6 9 6 6 6-6');
+  node.appendChild(p);
+  return node;
+}
+
 /** 渲染一个内容块 */
 function renderBlock(block) {
   switch (block.type) {
@@ -281,8 +352,8 @@ function renderBlock(block) {
       ]);
     case 'tip':
       return h(`div.strategy-tip.strategy-tip--${block.tone || 'good'}`, null, [
-        h('span.strategy-tip__icon', { text: block.tone === 'warn' ? '⚠️' : '💡' }),
-        h('span', { text: block.text }),
+        tipIcon(block.tone),
+        h('span.strategy-tip__text', { text: block.text }),
       ]);
     default:
       return h('p.strategy-p', { text: block.text });
