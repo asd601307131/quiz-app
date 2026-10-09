@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 答题页 / 答题卡 / 结果与解析
  *
  * 三种进入方式：
@@ -13,7 +13,7 @@ import { h, header, toast, confirmDialog, tag, emptyState } from '../ui/ui.js';
 import * as store from '../core/store.js';
 import * as state from '../core/state.js';
 import * as engine from '../core/engine.js';
-import { QUESTIONS, getQuestion, getChapter, TYPE_LABEL } from '../data/questions.js';
+import { QUESTIONS, getQuestion, getChapter } from '../data/questions.js';
 import { fmtClock, fmtDuration, fmtTime, percent, shuffle } from '../core/utils.js';
 import { go, back } from '../app.js';
 
@@ -40,8 +40,9 @@ export function __resetQuiz() {
   state.endSession();
 }
 
-/** 单选/判断题的展示顺序（考试模式下可打乱） */
+/** 单选/判断题的展示顺序（考试模式下可打乱）；填空/简答题没有选项，返回空数组 */
 function makeOptionOrder(question, shuffleOptions) {
+  if (!Array.isArray(question.options) || !question.options.length) return [];
   const letters = question.options.map((_, i) => engine.LETTERS[i]);
   return shuffleOptions && question.type === 'single' ? shuffle(letters) : letters;
 }
@@ -236,8 +237,8 @@ function selectOption(session, question, letter) {
     return;
   }
 
-  // 单选 / 判断
-  engine.setAnswer(session, question.id, [letter]);
+  // 单选 / 判断题
+  engine.setAnswer(session, question.id, [letter], question);
 
   if (!isPractice) {
     rerender();
@@ -264,6 +265,75 @@ function selectOption(session, question, letter) {
   rerender();
 }
 
+/** 填空题/简答题：输入变化先存进会话（不重渲染，避免输入框失焦） */
+function onTextChange(session, question, value) {
+  if (session.revealed[question.id]) return;
+  engine.setAnswer(session, question.id, value, question);
+
+  // 练习模式下，一填完就把「确认答案」按钮点亮
+  if (session.mode === 'practice') {
+    const primary = document.querySelector('.footer-bar .btn--primary');
+    if (primary) primary.disabled = !engine.hasAnswer(session.answers[question.id]);
+  }
+}
+
+/** 填空题/简答题：点击「确认答案」后判分或标记待自评 */
+function confirmText(session, question) {
+  const raw = session.answers[question.id];
+  if (!engine.hasAnswer(raw)) {
+    toast(question.type === 'fill' ? '请先填写答案' : '请先作答');
+    return;
+  }
+
+  if (session.mode !== 'practice') {
+    rerender();
+    return;
+  }
+
+  session.revealed[question.id] = true;
+  // 简答题不自动判分，返回 null 表示待自评
+  session.feedback[question.id] = engine.applyInstantFeedback(question, raw);
+  rerender();
+}
+
+/** 多选题：确认后揭晓答案 */
+function confirmOptionAnswer(session, question) {
+  if (!engine.hasAnswer(session.answers[question.id])) {
+    toast('请先选择答案');
+    return;
+  }
+  session.revealed[question.id] = true;
+  session.feedback[question.id] = engine.applyInstantFeedback(question, session.answers[question.id]);
+  rerender();
+}
+
+/** 填空题输入框 */
+function fillInput(session, question) {
+  const value = typeof session.answers[question.id] === 'string' ? session.answers[question.id] : '';
+  const input = h('input.input.fill-input', {
+    type: 'text',
+    value,
+    placeholder: '在此填写答案',
+    autocomplete: 'off',
+    disabled: Boolean(session.revealed[question.id]),
+    oninput: (e) => onTextChange(session, question, e.target.value),
+  });
+  return h('div.fill-box', null, [input]);
+}
+
+/** 简答题文本框 */
+function shortInput(session, question) {
+  const value = typeof session.answers[question.id] === 'string' ? session.answers[question.id] : '';
+  const area = h('textarea.input.short-input', {
+    rows: '5',
+    placeholder: '在此作答（简答题不自动判分，交卷后可与参考答案自行对照）',
+    disabled: Boolean(session.revealed[question.id]),
+    oninput: (e) => onTextChange(session, question, e.target.value),
+  });
+  area.value = value;
+  return h('div.fill-box', null, [area]);
+}
+
 function rerender() {
   const node = renderQuiz();
   const root = document.getElementById('app');
@@ -288,9 +358,13 @@ function renderQuiz() {
   const answered = engine.answeredCount(session);
   const isExam = session.mode === 'exam';
   const revealed = Boolean(session.revealed[q.id]);
-  const userAnswer = engine.normalizeAnswer(session.answers[q.id]);
-  const order = session.optionOrder[q.id] || q.options.map((_, i) => engine.LETTERS[i]);
-  const byLetter = new Map(q.options.map((text, i) => [engine.LETTERS[i], text]));
+  const qType = engine.normalizeType(q.type);
+  const isTextType = qType === 'fill' || qType === 'short';
+  const userAnswer = isTextType ? [] : engine.normalizeAnswer(session.answers[q.id]);
+  const myText = typeof session.answers[q.id] === 'string' ? session.answers[q.id] : '';
+  const opts = Array.isArray(q.options) ? q.options : [];
+  const order = isTextType ? [] : session.optionOrder[q.id] || opts.map((_, i) => engine.LETTERS[i]);
+  const byLetter = new Map((Array.isArray(q.options) ? q.options : []).map((text, i) => [engine.LETTERS[i], text]));
 
   const headerEl = header({
     title: session.title,
@@ -309,7 +383,7 @@ function renderQuiz() {
   const meta = h('div.quiz-meta', null, [
     h('div.quiz-meta__top', null, [
       h('span', { text: `已答 ${answered}/${total}` }),
-      isExam ? h('span', null, ['剩余 ', timerNode]) : h('span', { text: TYPE_LABEL[q.type] }),
+      isExam ? h('span', null, ['剩余 ', timerNode]) : h('span', { text: engine.typeLabel(q.type) }),
     ]),
     h('div.progress', null, [
       h('div.progress__bar', { style: { width: `${percent(answered, total)}%` } }),
@@ -344,29 +418,49 @@ function renderQuiz() {
   const stemCard = h('div.stem', null, [
     h('div.stem__head', null, [
       h('span.stem__index', { text: `第 ${session.currentIndex + 1} 题` }),
-      h('span.stem__type', { text: TYPE_LABEL[q.type] }),
+      h('span.stem__type', { text: engine.typeLabel(q.type) }),
       tag(engine.DIFFICULTIES[q.difficulty].label, engine.DIFFICULTIES[q.difficulty].color),
     ]),
     h('div.stem__text', { text: q.stem }),
-    h('div.options', null, optionNodes),
+    isTextType
+      ? qType === 'fill'
+        ? fillInput(session, q)
+        : shortInput(session, q)
+      : h('div.options', null, optionNodes),
   ]);
 
   let feedbackNode = null;
   if (revealed) {
     const ok = session.feedback[q.id];
-    feedbackNode = h(`div.feedback.feedback--${ok ? 'right' : 'wrong'}`, null, [
-      h('div.feedback__title', { text: ok ? '✅ 回答正确' : '❌ 回答错误' }),
-      h('div.feedback__line', null, [
-        '正确答案：',
-        h('b', { text: engine.normalizeAnswer(q.answer).join('、') }),
-        userAnswer.length ? ` ｜ 你的答案：${userAnswer.join('、')}` : ' ｜ 未作答',
-      ]),
-      h('div.feedback__line', null, ['解析：', h('span', { text: q.analysis })]),
-    ]);
+    if (ok === null) {
+      // 简答题：不自动判分，展示参考答案供自评
+      feedbackNode = h('div.feedback.feedback--pending', null, [
+        h('div.feedback__title', { text: '📝 简答题 · 待自评' }),
+        h('div.feedback__line', null, ['参考答案：', h('span', { text: q.answerText || myText || '（未提供参考答案）' })]),
+        h('div.feedback__line', null, ['解析：', h('span', { text: q.analysis })]),
+      ]);
+    } else {
+      const mine = qType === 'fill' ? myText : userAnswer.join('、');
+      const rightText =
+        qType === 'fill'
+          ? (Array.isArray(q.answer) ? q.answer.join(' / ') : String(q.answer))
+          : engine.normalizeAnswer(q.answer).join('、');
+      feedbackNode = h(`div.feedback.feedback--${ok ? 'right' : 'wrong'}`, null, [
+        h('div.feedback__title', { text: ok ? '✅ 回答正确' : '❌ 回答错误' }),
+        h('div.feedback__line', null, [
+          '正确答案：',
+          h('b', { text: rightText }),
+          ` ｜ 你的答案：${mine || '未作答'}`,
+        ]),
+        h('div.feedback__line', null, ['解析：', h('span', { text: q.analysis })]),
+      ]);
+    }
   }
 
   const isLast = session.currentIndex >= total - 1;
-  const multiPending = q.type === 'multiple' && !isExam && !revealed;
+  const hasMyAnswer = isTextType ? Boolean(myText.trim()) : userAnswer.length > 0;
+  // 多选/填空/简答：练习模式下需要先「确认答案」再看结果
+  const needConfirm = !isExam && !revealed && (qType === 'multiple' || qType === 'fill' || qType === 'short');
 
   const footer = h('div.footer-bar', null, [
     h('button.btn.btn--ghost', {
@@ -378,16 +472,12 @@ function renderQuiz() {
         rerender();
       },
     }),
-    multiPending
+    needConfirm
       ? h('button.btn.btn--primary', {
           type: 'button',
           text: '确认答案',
-          disabled: userAnswer.length === 0,
-          onclick: () => {
-            session.revealed[q.id] = true;
-            session.feedback[q.id] = engine.applyInstantFeedback(q, session.answers[q.id]);
-            rerender();
-          },
+          disabled: !hasMyAnswer,
+          onclick: () => (isTextType ? confirmText(session, q) : confirmOptionAnswer(session, q)),
         })
       : isLast
         ? h('button.btn.btn--primary', {
@@ -624,21 +714,35 @@ export function ResultView({ id }) {
 function analysisItem(d, index, session) {
   const q = getQuestion(d.questionId);
   if (!q) return null;
-  const mine = (d.userAnswer || []).join('、') || '未作答';
-  const right = (d.rightAnswer || []).join('、');
+  const type = engine.normalizeType(q.type);
+  const mine = engine.formatAnswer(q, d.userAnswer) || '未作答';
+
+  // 简答题无自动判分，展示参考答案并标记为待自评
+  const pending = d.pending || type === 'short';
+  const right =
+    type === 'short'
+      ? q.answerText || '（未提供参考答案）'
+      : type === 'fill'
+        ? Array.isArray(d.rightAnswer)
+          ? d.rightAnswer.join(' / ')
+          : String(d.rightAnswer || '')
+        : engine.normalizeAnswer(d.rightAnswer).join('、');
+
   return h('div.analysis-item', null, [
     h('div.analysis-item__head', null, [
       h('span.analysis-item__no', { text: `第 ${index + 1} 题` }),
-      tag(d.correct ? '答对' : '答错', d.correct ? 'easy' : 'hard'),
-      tag(TYPE_LABEL[q.type]),
+      pending
+        ? tag('待自评', 'medium')
+        : tag(d.correct ? '答对' : '答错', d.correct ? 'easy' : 'hard'),
+      tag(engine.typeLabel(q.type)),
       tag(engine.DIFFICULTIES[q.difficulty].label, engine.DIFFICULTIES[q.difficulty].color),
     ]),
     h('div.analysis-item__stem', { text: q.stem }),
     h('div.analysis-item__answer', null, [
-      '正确答案：',
+      type === 'short' ? '参考答案：' : '正确答案：',
       h('em', { text: right }),
       ' ｜ 你的答案：',
-      h(`em${d.correct ? '' : '.mine-wrong'}`, { text: mine }),
+      h(`em${d.correct || pending ? '' : '.mine-wrong'}`, { text: mine }),
     ]),
     h('div.analysis-item__analysis', null, [h('b', { text: '解析：' }), q.analysis]),
     session
@@ -668,40 +772,49 @@ export function ReviewView({ id }) {
   }
 
   const item = store.getWrongBook().find((w) => w.questionId === id);
-  const byLetter = new Map(q.options.map((text, i) => [engine.LETTERS[i], text]));
+  const byLetter = new Map((Array.isArray(q.options) ? q.options : []).map((text, i) => [engine.LETTERS[i], text]));
+  const qType = engine.normalizeType(q.type);
+  const isTextType = qType === 'fill' || qType === 'short';
+  const rightText = isTextType
+    ? Array.isArray(q.answer)
+      ? q.answer.join(' / ')
+      : String(q.answerText || q.answer || '（未提供参考答案）')
+    : engine.normalizeAnswer(q.answer).join('、');
 
   const body = h('div.page__body', null, [
     h('div.stem', null, [
       h('div.stem__head', null, [
-        tag(TYPE_LABEL[q.type], 'primary'),
+        tag(engine.typeLabel(q.type), 'primary'),
         tag(engine.DIFFICULTIES[q.difficulty].label, engine.DIFFICULTIES[q.difficulty].color),
         item ? tag(`错 ${item.wrongCount} 次`, 'hard') : null,
       ]),
       h('div.stem__text', { text: q.stem }),
-      h(
-        'div.options',
-        null,
-        q.options.map((_, i) => {
-          const letter = engine.LETTERS[i];
-          const isRight = engine.normalizeAnswer(q.answer).includes(letter);
-          const isMine = item && (item.lastAnswer || []).includes(letter);
-          let cls = 'option option--disabled';
-          if (isRight) cls += ' option--right';
-          else if (isMine) cls += ' option--wrong';
-          return h(`div.${cls.split(' ').join('.')}`, null, [
-            h('span.option__key', { text: letter }),
-            h('span.option__text', { text: byLetter.get(letter) }),
-          ]);
-        })
-      ),
+      isTextType
+        ? null
+        : h(
+            'div.options',
+            null,
+            (Array.isArray(q.options) ? q.options : []).map((_, i) => {
+              const letter = engine.LETTERS[i];
+              const isRight = engine.normalizeAnswer(q.answer).includes(letter);
+              const isMine = item && engine.normalizeAnswer(item.lastAnswer).includes(letter);
+              let cls = 'option option--disabled';
+              if (isRight) cls += ' option--right';
+              else if (isMine) cls += ' option--wrong';
+              return h(`div.${cls.split(' ').join('.')}`, null, [
+                h('span.option__key', { text: letter }),
+                h('span.option__text', { text: byLetter.get(letter) }),
+              ]);
+            })
+          ),
     ]),
     h('div.feedback.feedback--right.mt-12', null, [
-      h('div.feedback__title', { text: '正确答案' }),
-      h('div.feedback__line', null, [h('b', { text: engine.normalizeAnswer(q.answer).join('、') })]),
+      h('div.feedback__title', { text: qType === 'short' ? '参考答案' : '正确答案' }),
+      h('div.feedback__line', null, [h('b', { text: rightText })]),
       item
         ? h('div.feedback__line', null, [
-            '你上次选择了：',
-            h('b', { text: (item.lastAnswer || []).join('、') || '未作答' }),
+            qType === 'short' || qType === 'fill' ? '你上次填写：' : '你上次选择了：',
+            h('b', { text: engine.formatAnswer(q, item.lastAnswer) || '未作答' }),
           ])
         : null,
       h('div.feedback__line', null, ['解析：', h('span', { text: q.analysis })]),

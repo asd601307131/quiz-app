@@ -14,6 +14,34 @@ export const DIFFICULTIES = {
   hard: { key: 'hard', label: '困难', color: 'red' },
 };
 
+/**
+ * 题型。
+ *   single   单选（判断题请用 single + options: ['正确','错误']）
+ *   multiple 多选，全对才得分
+ *   fill     填空，按字符串匹配判分，支持多个可接受答案
+ *   short    简答，无标准答案，不参与自动判分（只统计作答数）
+ */
+export const TYPES = {
+  single: { key: 'single', label: '单选题', objective: true },
+  multiple: { key: 'multiple', label: '多选题', objective: true },
+  fill: { key: 'fill', label: '填空题', objective: true },
+  short: { key: 'short', label: '简答题', objective: false },
+};
+
+/** 兼容历史数据：judge 归一化为 single */
+export function normalizeType(type) {
+  if (type === 'judge') return 'single';
+  return TYPES[type] ? type : 'single';
+}
+
+export function isObjective(type) {
+  return TYPES[normalizeType(type)].objective;
+}
+
+export function typeLabel(type) {
+  return TYPES[normalizeType(type)].label;
+}
+
 const MAX_SCORE = 100;
 
 /* ------------------------------------------------------------------ */
@@ -21,8 +49,8 @@ const MAX_SCORE = 100;
 /* ------------------------------------------------------------------ */
 
 /**
- * 答案统一为“升序去重”的字母数组，题型无关，便于比较。
- * 只接受字符串（或含 key 的对象被上层转换后的字符串），null/undefined 一律剔除。
+ * 选项题答案统一为“升序去重”的字母数组。
+ * 只接受字符串，null/undefined 一律剔除。
  */
 export function normalizeAnswer(answer) {
   if (answer == null) return [];
@@ -37,18 +65,50 @@ export function normalizeAnswer(answer) {
   ].sort();
 }
 
-function sameAnswer(a, b) {
+/**
+ * 填空题答案的宽松归一化：去掉所有空白、统一大小写、
+ * 全角转半角、去掉常见中英文标点，避免“写法略有差异”被判错。
+ */
+export function normalizeText(value) {
+  if (value == null) return '';
+  return String(value)
+    .replace(/[\uFF01-\uFF5E]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0)) // 全角转半角
+    .replace(/\u3000/g, ' ') // 全角空格
+    .replace(/[\s]+/g, '')
+    .toLowerCase()
+    .replace(/[。，、；：？！“”‘’（）《》【】,.!?;:'"()<>\[\]]/g, '');
+}
+
+/** 选项题比较 */
+function sameChoiceAnswer(a, b) {
   const x = normalizeAnswer(a);
   const y = normalizeAnswer(b);
   return x.length === y.length && x.every((v, i) => v === y[i]);
 }
 
+/** 填空题比较：命中任一可接受答案即算对 */
+function sameFillAnswer(accepted, userText) {
+  const mine = normalizeText(userText);
+  if (!mine) return false;
+  const list = Array.isArray(accepted) ? accepted : [accepted];
+  return list.some((item) => normalizeText(item) === mine);
+}
+
 /**
  * 判断单题对错。
- * 多选采用“全对才得分”策略（可在 grading 中改为按项给分）。
+ * - 选项题：多选采用“全对才得分”
+ * - 填空题：答案可写成数组，任意一项匹配即正确
+ * - 简答题：无法自动判分，恒返回 false，由上层单独处理（见 gradeSession）
  */
 export function isCorrect(question, userAnswer) {
-  return sameAnswer(question.answer, userAnswer);
+  switch (normalizeType(question.type)) {
+    case 'fill':
+      return sameFillAnswer(question.answer, userAnswer);
+    case 'short':
+      return false;
+    default:
+      return sameChoiceAnswer(question.answer, userAnswer);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -106,23 +166,58 @@ export function createSession(config) {
   };
 }
 
-/** 会话中已作答题数 */
+/**
+ * 会话中已作答题数。
+ * 填空题/简答题的答案是字符串，用原始值判断；选项题用字母数组判断。
+ */
 export function answeredCount(session) {
-  return Object.values(session.answers).filter((a) => normalizeAnswer(a).length > 0).length;
+  return Object.values(session.answers).filter((a) => hasAnswer(a)).length;
 }
 
 export function isAnswered(session, questionId) {
-  return normalizeAnswer(session.answers[questionId]).length > 0;
+  return hasAnswer(session.answers[questionId]);
 }
 
-/** 记录作答（多选会覆盖） */
-export function setAnswer(session, questionId, answer) {
-  const list = normalizeAnswer(answer);
-  if (!list.length) {
-    delete session.answers[questionId];
-  } else {
-    session.answers[questionId] = list;
+/** 任意形态的答案是否算“已作答” */
+export function hasAnswer(answer) {
+  if (Array.isArray(answer)) return answer.length > 0;
+  if (typeof answer === 'string') return answer.trim().length > 0;
+  return false;
+}
+
+/** 选项题的默认空值 */
+function emptyFor(question) {
+  return normalizeType(question && question.type) === 'fill' || normalizeType(question && question.type) === 'short'
+    ? ''
+    : [];
+}
+
+/** 记录作答（多选题传新数组覆盖；填空题/简答题传字符串） */
+export function setAnswer(session, questionId, answer, question = null) {
+  const type = question ? normalizeType(question.type) : null;
+
+  if (type === 'fill' || type === 'short') {
+    // 兼容传数组的调用方式（例如测试或批量回填）：取第一项作为文本
+    let text = '';
+    if (Array.isArray(answer)) text = answer.length ? String(answer[0]) : '';
+    else if (answer != null) text = String(answer);
+
+    if (!text.trim()) delete session.answers[questionId];
+    else session.answers[questionId] = text;
+    return session;
   }
+
+  if (typeof answer === 'string') {
+    // 未指定题型但传了字符串：按字母答案处理
+    const list = normalizeAnswer(answer);
+    if (!list.length) delete session.answers[questionId];
+    else session.answers[questionId] = list;
+    return session;
+  }
+
+  const list = normalizeAnswer(answer);
+  if (!list.length) delete session.answers[questionId];
+  else session.answers[questionId] = list;
   return session;
 }
 
@@ -135,52 +230,82 @@ export function toggleAnswer(session, questionId, letter) {
   return setAnswer(session, questionId, cur);
 }
 
+/** 把任意答案渲染成可显示文本，供结果页/错题本使用 */
+export function formatAnswer(question, answer) {
+  const type = question ? normalizeType(question.type) : null;
+  if (type === 'fill' || type === 'short') {
+    return typeof answer === 'string' ? answer.trim() : '';
+  }
+  return normalizeAnswer(answer).join('、');
+}
+
 /* ------------------------------------------------------------------ */
 /* 交卷判分                                                            */
 /* ------------------------------------------------------------------ */
 
 /**
  * 交卷。返回结果对象并写入会话。
- * 计分：每题等分（满分 100，四舍五入保留 1 位）。
+ *
+ * 计分规则：满分 100，平均分给「参与自动判分的题」（选项题 + 填空题）。
+ * 简答题不参与自动判分，单独统计为 pending（待人工/自评），
+ * 这样题库里混入简答题也不会把整卷总分压低。
  */
 export function gradeSession(session, { recordToStore = true, user = null } = {}) {
   const questions = session.questions;
-  const perScore = questions.length ? MAX_SCORE / questions.length : 0;
   const detail = [];
   let correct = 0;
   let wrong = 0;
   let unanswered = 0;
+  let pending = 0;
 
   for (const q of questions) {
-    const userAnswer = normalizeAnswer(session.answers[q.id]);
-    const ok = userAnswer.length > 0 && isCorrect(q, userAnswer);
-    if (userAnswer.length === 0) unanswered += 1;
-    else if (ok) correct += 1;
-    else wrong += 1;
+    const type = normalizeType(q.type);
+    const raw = session.answers[q.id];
+    const objective = isObjective(type);
+    const answered = hasAnswer(raw);
+
+    let ok = false;
+    if (objective && answered) ok = isCorrect(q, type === 'fill' ? raw : normalizeAnswer(raw));
+
+    if (!objective) {
+      pending += 1;
+    } else if (!answered) {
+      unanswered += 1;
+    } else if (ok) {
+      correct += 1;
+    } else {
+      wrong += 1;
+    }
 
     detail.push({
       questionId: q.id,
       chapterId: q.chapterId,
       difficulty: q.difficulty,
-      type: q.type,
-      userAnswer,
-      rightAnswer: normalizeAnswer(q.answer),
+      type,
+      objective,
+      userAnswer: raw == null ? emptyFor(q) : raw,
+      rightAnswer: q.answer,
       correct: ok,
-      answered: userAnswer.length > 0,
+      answered,
+      pending: !objective,
     });
   }
 
+  const objectiveTotal = questions.filter((q) => isObjective(q.type)).length;
+  const perScore = objectiveTotal ? MAX_SCORE / objectiveTotal : 0;
   const score = Math.round(correct * perScore * 10) / 10;
   const durationSec = Math.max(0, Math.round(((session.submittedAt || Date.now()) - session.startedAt) / 1000));
   const result = {
     sessionId: session.id,
     mode: session.mode,
     total: questions.length,
+    objectiveTotal,
     correct,
     wrong,
     unanswered,
+    pending,
     score,
-    accuracy: percent(correct, questions.length),
+    accuracy: percent(correct, objectiveTotal),
     durationSec,
     detail,
     gradedAt: Date.now(),
@@ -201,6 +326,7 @@ export function gradeSession(session, { recordToStore = true, user = null } = {}
       correct,
       wrong,
       unanswered,
+      pending,
       score,
       accuracy: result.accuracy,
       durationSec,
@@ -212,23 +338,29 @@ export function gradeSession(session, { recordToStore = true, user = null } = {}
   return result;
 }
 
-/** 练习模式：单题即时反馈 + 错题本联动 */
+/**
+ * 练习模式：单题即时反馈 + 错题本联动。
+ * 简答题不自动判分，返回 null 表示“待自评”，也不会进错题本。
+ */
 export function applyInstantFeedback(question, userAnswer) {
+  if (!isObjective(question.type)) return null;
+
   const ok = isCorrect(question, userAnswer);
   if (ok) {
     store.removeWrong(question.id);
   } else {
-    store.addWrong(question, normalizeAnswer(userAnswer));
+    store.addWrong(question, userAnswer);
   }
   return ok;
 }
 
-/** 交卷后批量更新错题本 */
+/** 交卷后批量更新错题本（跳过简答题） */
 export function syncWrongBook(session, questions) {
   const byId = new Map(questions.map((q) => [q.id, q]));
   for (const item of (session.result ? session.result.detail : [])) {
     const q = byId.get(item.questionId);
     if (!q) continue;
+    if (!isObjective(q.type)) continue;
     if (item.correct) store.removeWrong(q.id);
     else if (item.answered) store.addWrong(q, item.userAnswer);
   }

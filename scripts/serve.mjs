@@ -42,8 +42,14 @@ const MIME = {
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
   '.txt': 'text/plain; charset=utf-8',
+  '.csv': 'text/csv; charset=utf-8',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.xls': 'application/vnd.ms-excel',
   '.map': 'application/json; charset=utf-8',
 };
+
+/** 下载类文件加 Content-Disposition，便于浏览器直接保存 */
+const DOWNLOAD_EXT = new Set(['.csv', '.xlsx', '.xls', '.zip']);
 
 function send(res, status, body, headers = {}) {
   res.writeHead(status, {
@@ -137,7 +143,12 @@ const server = http.createServer(async (req, res) => {
     const ext = path.extname(abs).toLowerCase();
     fs.readFile(abs, (e2, buf) => {
       if (e2) return send(res, 500, 'Read Error');
-      send(res, 200, buf, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+      const headers = { 'Content-Type': MIME[ext] || 'application/octet-stream' };
+      if (DOWNLOAD_EXT.has(ext)) {
+        const name = path.basename(abs);
+        headers['Content-Disposition'] = `attachment; filename*=UTF-8''${encodeURIComponent(name)}`;
+      }
+      send(res, 200, buf, headers);
     });
   });
 });

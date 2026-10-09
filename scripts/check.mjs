@@ -19,7 +19,8 @@ function check(name, condition, detail = '') {
 }
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-const TYPES = ['single', 'multiple', 'judge'];
+const TYPES = ['single', 'multiple', 'judge', 'fill', 'short'];
+const CHOICE_TYPES = ['single', 'multiple', 'judge'];
 const DIFFS = ['easy', 'medium', 'hard'];
 
 console.log('\n[1] 题库结构');
@@ -50,26 +51,32 @@ for (const q of QUESTIONS) {
     structDetail = `${q.id} 章节 ${q.chapterId} 不存在`;
     break;
   }
-  if (!Array.isArray(q.options) || q.options.length < 2) {
-    structOk = false;
-    structDetail = `${q.id} 选项不足`;
-    break;
-  }
-  if (!q.options.every((o) => typeof o === 'string' && o.trim())) {
-    structOk = false;
-    structDetail = `${q.id} 选项必须是纯文本字符串`;
-    break;
-  }
-  // 选项字母由顺序派生，这里只校验数量与答案字母的取值范围一致
-  const keys = LETTERS.slice(0, q.options.length);
-  if (q.options.length !== keys.length) {
-    structOk = false;
-    structDetail = `${q.id} 选项数量异常`;
-    break;
-  }
   if (!q.analysis || q.analysis.length < 4) {
     structOk = false;
     structDetail = `${q.id} 缺少解析`;
+    break;
+  }
+  // 选项题必须有两个以上纯文本选项；填空/简答题不需要 options
+  if (CHOICE_TYPES.includes(q.type)) {
+    if (!Array.isArray(q.options) || q.options.length < 2) {
+      structOk = false;
+      structDetail = `${q.id} 选项不足`;
+      break;
+    }
+    if (!q.options.every((o) => typeof o === 'string' && o.trim())) {
+      structOk = false;
+      structDetail = `${q.id} 选项必须是纯文本字符串`;
+      break;
+    }
+    if (q.options.length > LETTERS.length) {
+      structOk = false;
+      structDetail = `${q.id} 选项超过 ${LETTERS.length} 个`;
+      break;
+    }
+  }
+  if (q.type === 'short' && !q.answerText) {
+    structOk = false;
+    structDetail = `${q.id} 简答题缺少参考答案 answerText`;
     break;
   }
 }
@@ -79,6 +86,22 @@ let answerOk = true;
 let answerDetail = '';
 for (const q of QUESTIONS) {
   const ans = q.answer;
+
+  if (q.type === 'fill') {
+    const list = Array.isArray(ans) ? ans : [ans];
+    if (!list.length || list.some((a) => typeof a !== 'string' || !a.trim())) {
+      answerOk = false;
+      answerDetail = `${q.id} 填空题答案必须是至少一个非空字符串`;
+      break;
+    }
+    continue;
+  }
+
+  if (q.type === 'short') {
+    // 简答题不自动判分，answer 可省略
+    continue;
+  }
+
   if (!Array.isArray(ans) || !ans.length) {
     answerOk = false;
     answerDetail = `${q.id} 没有答案`;
@@ -115,10 +138,44 @@ check('答案与题型匹配', answerOk, answerDetail);
 
 console.log('\n[2] 题库覆盖');
 
-check('章节数 >= 5', CHAPTERS.length >= 5, `实际 ${CHAPTERS.length}`);
-check('题目总数 >= 60', QUESTIONS.length >= 60, `实际 ${QUESTIONS.length}`);
-check('每章节题目数 >= 10', CHAPTERS.every((c) => chapterStats(c.id).total >= 10));
-check('三种题型齐备', TYPES.every((t) => QUESTIONS.some((q) => q.type === t)));
+/**
+ * 题库规模类的断言只在「内置示例题库」上生效。
+ * 用户导入自己的题库后规模必然变化，不能因此判定失败——
+ * 这里用是否包含示例章节 web 作为识别标志。
+ */
+const IS_DEMO_BANK = CHAPTERS.some((c) => c.id === 'web') && QUESTIONS.length >= 60;
+
+if (IS_DEMO_BANK) {
+  check('章节数 >= 5', CHAPTERS.length >= 5, `实际 ${CHAPTERS.length}`);
+  check('题目总数 >= 60', QUESTIONS.length >= 60, `实际 ${QUESTIONS.length}`);
+  check('每章节题目数 >= 10', CHAPTERS.every((c) => chapterStats(c.id).total >= 10));
+} else {
+  console.log('  （当前是自定义题库，跳过示例题库的规模断言）');
+  check('自定义题库非空', QUESTIONS.length > 0, `实际 ${QUESTIONS.length}`);
+  check('每个章节都至少有一道题', CHAPTERS.every((c) => chapterStats(c.id).total > 0));
+}
+// 单选题是必有的；多选/判断属于可选题型，题库里没有时不算失败
+check('单选题存在', QUESTIONS.some((q) => q.type === 'single'));
+check(
+  '选项类题目的选项都合法',
+  QUESTIONS.filter((q) => q.type === 'single' || q.type === 'multiple').every(
+    (q) => Array.isArray(q.options) && q.options.length >= 2
+  )
+);
+// 判断题有两种合法写法：type: 'judge'，或 single + options ['正确','错误']（引擎会把 judge 归一化为 single）
+check(
+  '存在判断题形态的题目',
+  QUESTIONS.some(
+    (q) =>
+      q.type === 'judge' ||
+      (q.type === 'single' &&
+        q.options.length === 2 &&
+        q.options[0] === '正确' &&
+        q.options[1] === '错误')
+  )
+);
+// 填空/简答题为可选能力：题库里还没有时不算失败，但要有的话必须合法
+check('填空/简答题（若存在）合法', QUESTIONS.filter((q) => q.type === 'fill' || q.type === 'short').every((q) => Boolean(q.analysis)));
 check('三种难度齐备', DIFFS.every((d) => QUESTIONS.some((q) => q.difficulty === d)));
 check(
   '章节统计与题目一致',
@@ -128,14 +185,33 @@ check(
   })
 );
 
+/** 题目最多的章节：供组卷章节筛选断言使用（自适应任意题库） */
+const BIGGEST_CHAPTER = CHAPTERS.map((c) => ({ ...c, total: chapterStats(c.id).total })).sort(
+  (a, b) => b.total - a.total
+)[0];
+
 /* ------------------------------------------------------------------ */
 /* 引擎测试（不依赖浏览器，仅用纯函数部分）                              */
 /* ------------------------------------------------------------------ */
 
 console.log('\n[3] 判分引擎');
 
-const { normalizeAnswer, isCorrect, buildPaper, createSession, answeredCount, setAnswer, toggleAnswer, gradeSession } =
-  await import('../src/core/engine.js');
+const {
+  normalizeAnswer,
+  isCorrect,
+  buildPaper,
+  createSession,
+  answeredCount,
+  setAnswer,
+  toggleAnswer,
+  gradeSession,
+  normalizeText,
+  hasAnswer,
+  formatAnswer,
+  normalizeType,
+  isObjective,
+  typeLabel,
+} = await import('../src/core/engine.js');
 
 check('normalizeAnswer 升序去重', normalizeAnswer(['c', 'A', 'a']).join(',') === 'A,C');
 check('normalizeAnswer 过滤空值', normalizeAnswer([' b ', '', null, 'a']).join(',') === 'A,B');
@@ -144,43 +220,135 @@ const single = QUESTIONS.find((q) => q.type === 'single');
 check('单选题答案正确判定', isCorrect(single, [single.answer[0]]));
 check('单选题答案错误判定', !isCorrect(single, [LETTERS.find((l) => l !== single.answer[0])]));
 
-const multi = QUESTIONS.find((q) => q.type === 'multiple');
+// 题库里可能没有多选题（例如成考题库），此时用内置夹具，保证引擎逻辑始终被覆盖
+const multi =
+  QUESTIONS.find((q) => q.type === 'multiple') || {
+    id: 'fixture-multi',
+    type: 'multiple',
+    stem: '多选题夹具',
+    options: ['甲', '乙', '丙', '丁'],
+    answer: ['A', 'C'],
+    analysis: '夹具题，仅用于引擎测试。',
+  };
 check('多选题少选判错', !isCorrect(multi, [multi.answer[0]]));
 check('多选题全选判对', isCorrect(multi, multi.answer.slice().reverse()));
 
 check('空答案判错', !isCorrect(single, []));
 check('null 答案判错', !isCorrect(single, null));
 
+/* ---- 填空题 / 简答题 ---- */
+
+console.log('\n[3b] 填空与简答题');
+
+const fillQ = {
+  id: 'fixture-fill',
+  type: 'fill',
+  stem: '判断数组的方法是什么？',
+  answer: ['Array.isArray', 'Array.isArray()'],
+  analysis: '用 Array.isArray 判断。',
+};
+
+check('填空题正确答案判对', isCorrect(fillQ, 'Array.isArray'));
+check('填空题忽略大小写', isCorrect(fillQ, 'array.isarray'));
+check('填空题忽略首尾空格', isCorrect(fillQ, '  Array.isArray  '));
+check('填空题忽略全角括号差异', isCorrect(fillQ, 'Array.isArray（）'));
+check('填空题多个可接受答案', isCorrect(fillQ, 'Array.isArray()'));
+check('填空题错误答案判错', !isCorrect(fillQ, 'typeof'));
+check('填空题空答案判错', !isCorrect(fillQ, ''));
+
+check('normalizeText 去空白与标点', normalizeText(' A b, c。 ') === 'abc');
+check('normalizeText 全角转半角', normalizeText('ＡＢＣ') === 'abc');
+
+const shortQ = {
+  id: 'fixture-short',
+  type: 'short',
+  stem: '请简述事件循环。',
+  answerText: '宏任务 -> 微任务 -> 渲染。',
+  analysis: '先清空微任务再渲染。',
+};
+
+check('简答题不参与自动判分', !isCorrect(shortQ, '宏任务 -> 微任务 -> 渲染。'));
+check('简答题标记为非客观题', !isObjective('short'));
+check('填空题标记为客观题', isObjective('fill'));
+
+check('normalizeType 把 judge 归一化为 single', normalizeType('judge') === 'single');
+check('判断题显示名仍为判断题', typeLabel('judge') === '单选题' && typeLabel('fill') === '填空题');
+
+const textSession = createSession({ mode: 'practice', questions: [fillQ, shortQ] });
+check('未作答时 hasAnswer 为假', !hasAnswer(textSession.answers[fillQ.id]));
+setAnswer(textSession, fillQ.id, 'Array.isArray', fillQ);
+check('填空题答案以字符串保存', textSession.answers[fillQ.id] === 'Array.isArray');
+check('填空题作答计入已答', hasAnswer(textSession.answers[fillQ.id]) && answeredCount(textSession) === 1);
+setAnswer(textSession, fillQ.id, '   ', fillQ);
+check('填空题只填空格视为未作答', !hasAnswer(textSession.answers[fillQ.id]));
+
+setAnswer(textSession, shortQ.id, '先执行宏任务，再清空微任务', shortQ);
+check('简答题答案以字符串保存', typeof textSession.answers[shortQ.id] === 'string');
+check('formatAnswer 原样返回文本答案', formatAnswer(fillQ, 'Array.isArray') === 'Array.isArray');
+check('formatAnswer 选项答案用顿号连接', formatAnswer(single, ['A', 'C']) === 'A、C');
+
+/* ---- 含简答题的整卷判分 ---- */
+
+const mixedPaper = [single, multi, fillQ, shortQ];
+const mixedSession = createSession({ mode: 'exam', questions: mixedPaper });
+setAnswer(mixedSession, single.id, single.answer, single);
+setAnswer(mixedSession, multi.id, multi.answer, multi);
+setAnswer(mixedSession, fillQ.id, 'Array.isArray', fillQ);
+setAnswer(mixedSession, shortQ.id, '随便答一点', shortQ);
+const mixedResult = gradeSession(mixedSession, { recordToStore: false });
+check('简答题不拉低总分（客观题全对得 100）', mixedResult.score === 100, `实际 ${mixedResult.score}`);
+check('简答题计入 pending', mixedResult.pending === 1, `pending=${mixedResult.pending}`);
+check('客观题满分为 3 题', mixedResult.objectiveTotal === 3, `objectiveTotal=${mixedResult.objectiveTotal}`);
+check('正确率按客观题计算', mixedResult.accuracy === 100, `accuracy=${mixedResult.accuracy}`);
+check(
+  '明细里保留简答题文本答案',
+  mixedResult.detail.find((d) => d.questionId === shortQ.id).userAnswer === '随便答一点'
+);
+check('明细里保留填空题文本答案', mixedResult.detail.find((d) => d.questionId === fillQ.id).userAnswer === 'Array.isArray');
+
 console.log('\n[4] 组卷与交卷');
 
 const paper = buildPaper(QUESTIONS, { count: 5 });
-check('抽题数量正确', paper.length === 5);
-check('抽题无重复', new Set(paper.map((q) => q.id)).size === 5);
+check('抽题数量正确', paper.length === Math.min(5, QUESTIONS.length), `实际 ${paper.length}`);
+check('抽题无重复', new Set(paper.map((q) => q.id)).size === paper.length);
 
-const chapterPaper = buildPaper(QUESTIONS, { count: 99, chapterIds: ['js'] });
+const chapterPaper = buildPaper(QUESTIONS, { count: 99, chapterIds: [BIGGEST_CHAPTER.id] });
 check(
   '章节筛选生效',
-  chapterPaper.length > 0 && chapterPaper.every((q) => q.chapterId === 'js')
+  chapterPaper.length > 0 && chapterPaper.every((q) => q.chapterId === BIGGEST_CHAPTER.id),
+  `章节 ${BIGGEST_CHAPTER.id} 抽到 ${chapterPaper.length} 题`
 );
 
-const diffPaper = buildPaper(QUESTIONS, { count: 99, difficulties: ['hard'] });
+const ANY_DIFFICULTY = ['easy', 'medium', 'hard'].find((d) => QUESTIONS.some((q) => q.difficulty === d));
+const diffPaper = buildPaper(QUESTIONS, { count: 99, difficulties: [ANY_DIFFICULTY] });
 check(
   '难度筛选生效',
-  diffPaper.length > 0 && diffPaper.every((q) => q.difficulty === 'hard')
+  diffPaper.length > 0 && diffPaper.every((q) => q.difficulty === ANY_DIFFICULTY)
 );
 
-const seedPaper = buildPaper(QUESTIONS, { seedQuestions: ['js-01', 'css-01', '不存在的题'] });
-check('错题重练按 id 取题并忽略无效 id', seedPaper.length === 2);
+const seedIds = QUESTIONS.slice(0, 2).map((q) => q.id);
+const seedPaper = buildPaper(QUESTIONS, { seedQuestions: [...seedIds, '不存在的题'] });
+check('错题重练按 id 取题并忽略无效 id', seedPaper.length === seedIds.length, `实际 ${seedPaper.length}`);
 
 /**
- * 判分断言使用「确定性卷子」。
- * 不能随机抽题：题库里存在“所有选项都正确”的多选题（如 js-05、web-11、css-04），
+ * 判分断言使用「确定性卷子」，且必须每题都存在错误选项。
+ * 不能随机抽题：题库里可能存在“所有选项都正确”的多选题，
  * 一旦抽到就构造不出全错答案，断言会随机失败（这是测试用例的坑，不是应用的 bug）。
- * 下面这组题都至少有一个错误选项，且覆盖单选/多选/判断与三种难度。
+ *
+ * 这里自适应题库：从选项题里挑出有错误选项的题，最多 7 道。
  */
-const FIXED_PAPER_IDS = ['web-01', 'css-01', 'js-01', 'js-04', 'eng-01', 'net-09', 'net-01'];
-const fixedPaper = buildPaper(QUESTIONS, { seedQuestions: FIXED_PAPER_IDS });
-check('确定性卷子取题完整', fixedPaper.length === FIXED_PAPER_IDS.length);
+const FIXED_PAPER = QUESTIONS.filter(
+  (q) =>
+    ['single', 'multiple', 'judge'].includes(q.type) &&
+    Array.isArray(q.options) &&
+    q.options.some((_, i) => !q.answer.includes(LETTERS[i]))
+).slice(0, 7);
+const fixedPaper = buildPaper(QUESTIONS, { seedQuestions: FIXED_PAPER.map((q) => q.id) });
+check(
+  '确定性卷子取题完整',
+  fixedPaper.length === FIXED_PAPER.length && fixedPaper.length >= 1,
+  `期望 ${FIXED_PAPER.length} 实际 ${fixedPaper.length}`
+);
 check(
   '确定性卷子每题都存在错误选项（可构造全错）',
   fixedPaper.every((q) => q.options.some((_, i) => !q.answer.includes(LETTERS[i])))
@@ -192,7 +360,8 @@ check('会话答案初始为空', answeredCount(session) === 0);
 setAnswer(session, paper[0].id, ['A']);
 check('记录答案后计入已答', answeredCount(session) === 1);
 
-const multiQ = QUESTIONS.find((q) => q.type === 'multiple');
+// 复用上面的多选夹具（题库没有多选时也能测）
+const multiQ = multi;
 const ms = createSession({ mode: 'practice', questions: [multiQ] });
 toggleAnswer(ms, multiQ.id, 'A');
 toggleAnswer(ms, multiQ.id, 'B');
@@ -229,12 +398,20 @@ const emptyResult = gradeSession(emptySession, { recordToStore: false });
 check('未作答全部计入 unanswered', emptyResult.unanswered === fixedPaper.length);
 check('未作答得 0 分', emptyResult.score === 0);
 
-// 随机抽题也要能稳定判分（对随机卷子做一次全对判分，验证不依赖具体题目）
+// 随机抽题也要能稳定判分。
+// 注意：随机卷里可能含简答题（不参与自动判分），因此这里只对客观题断言满分，
+// 否则「全对得 100」会因为简答题被排除在计分外而误判失败。
+const { isObjective: isObjectiveType } = await import('../src/core/engine.js');
 const randomFull = createSession({ mode: 'exam', questions: paper });
-paper.forEach((q) => setAnswer(randomFull, q.id, q.answer));
+paper.forEach((q) => {
+  if (isObjectiveType(q.type)) setAnswer(randomFull, q.id, q.answer, q);
+});
+const randomFullResult = gradeSession(randomFull, { recordToStore: false });
+const randomObjectiveCount = paper.filter((q) => isObjectiveType(q.type)).length;
 check(
-  '随机卷子全对同样得 100 分',
-  gradeSession(randomFull, { recordToStore: false }).score === 100
+  '随机卷子客观题全对得 100 分',
+  randomObjectiveCount > 0 && randomFullResult.score === 100,
+  `客观题 ${randomObjectiveCount} 道，得分 ${randomFullResult.score}`
 );
 
 console.log(`\n结果: ${passed} 通过, ${failed} 失败\n`);

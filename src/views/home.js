@@ -1,12 +1,12 @@
-/**
+﻿/**
  * 首页 / 底部标签页（首页、错题本、记录、我的）
  */
 
 import { h, header, tabbar, tag, progressBar, emptyState, toast, confirmDialog } from '../ui/ui.js';
 import * as store from '../core/store.js';
 import * as auth from '../services/auth.js';
-import { CHAPTERS, QUESTIONS, chapterStats, getQuestion, TYPE_LABEL } from '../data/questions.js';
-import { DIFFICULTIES } from '../core/engine.js';
+import { CHAPTERS, QUESTIONS, chapterStats, getQuestion } from '../data/questions.js';
+import * as engine from '../core/engine.js';
 import { fmtTime, fmtDuration, percent } from '../core/utils.js';
 import { go } from '../app.js';
 
@@ -279,7 +279,7 @@ export function SetupView({ mode = 'practice' } = {}) {
   const diffPicker = h(
     'div.tag-row',
     null,
-    Object.values(DIFFICULTIES).map((d) =>
+    Object.values(engine.DIFFICULTIES).map((d) =>
       h(
         `button.btn.btn--sm${setupState.difficulties.includes(d.key) ? '.btn--primary' : '.btn--ghost'}`,
         {
@@ -426,8 +426,8 @@ export function WrongView({ auto = false } = {}) {
               h('div.list__main', null, [
                 h('div.list__title', { text: question.stem }),
                 h('div.tag-row.mt-8', null, [
-                  tag(TYPE_LABEL[question.type]),
-                  tag(DIFFICULTIES[question.difficulty].label, DIFFICULTIES[question.difficulty].color),
+                  tag(engine.typeLabel(question.type)),
+                  tag(engine.DIFFICULTIES[question.difficulty].label, engine.DIFFICULTIES[question.difficulty].color),
                   tag(`错 ${item.wrongCount} 次`, 'hard'),
                   tag(fmtTime(item.lastWrongAt)),
                 ]),

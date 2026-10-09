@@ -3,6 +3,11 @@ node_modules/
 dist/
 build/
 
+# 题库加工中间产物：PDF 抽取的教材原文与生成的 CSV。
+# 含教材版权内容且体积较大，不入库；需要时用 tools/extract-pdf.py 与
+# scripts/parse-*.mjs 从原始 PDF 重新生成。
+work/
+
 # 端到端验证时浏览器产生的临时配置目录
 screenshots/.profile*
 .profile*/
