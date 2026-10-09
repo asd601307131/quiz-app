@@ -115,8 +115,12 @@ quiz-app/
 │  ├─ serve.mjs                   本地静态服务器（含可选 API Mock）
 │  ├─ check.mjs                   题库 + 引擎自测
 │  └─ e2e.mjs                     无头浏览器端到端验证 + 截图
+├─ .github/workflows/deploy-pages.yml   GitHub Pages 自动部署（含发布前自测）
+├─ .gitignore / .gitattributes    忽略临时文件、统一换行符
 └─ screenshots/                   e2e 产出的 17 张界面截图
 ```
+
+> 手机用移动数据访问（不依赖同一 WiFi）→ 见 [第八节：部署](#八部署)。
 
 ---
 
@@ -259,14 +263,75 @@ node scripts/e2e.mjs http://localhost:5173
 
 ## 八、部署
 
-纯静态产物，把 `quiz-app/` 目录整体上传到任意静态托管（Nginx、OSS+CDN、Vercel、Netlify、GitHub Pages）即可。
+纯静态产物，把本项目目录整体上传到任意静态托管（GitHub Pages、Netlify、Vercel、Cloudflare Pages、
+Nginx、OSS+CDN）即可，**不需要构建、不需要 `npm install`、不需要后端**。
+
 要点：
 
 1. 启用 HTTPS —— 微信授权与后续接口都要求 HTTPS；
-2. 若托管在子路径（如 `example.com/quiz/`），使用相对路径引用（本项目已经是相对路径），无需额外配置；
+2. 若托管在子路径（如 `example.com/quiz/`），使用相对路径引用（本项目已经全部是相对路径），无需额外配置；
 3. 需要「刷新不 404」时，把未知路径回退到 `index.html`（本项目用 hash 路由，通常不需要）；
 4. 生产环境建议把 `?api=` 换成写死域名，避免用户手动传参；
 5. 需要云端成绩与真实用户体系时，把 `scripts/serve.mjs` 里的 Mock 换成真实后端，按第五节的接口约定实现即可。
+
+### 8.1 部署到 GitHub Pages（推荐，手机流量也能访问）
+
+仓库已包含 `.github/workflows/deploy-pages.yml`，推到 GitHub 后自动发布，**每次 push 自动更新**。
+工作流在发布前会先跑一遍 `node scripts/check.mjs`，题库或判分逻辑有问题就不会发布。
+
+一次性设置：
+
+```powershell
+cd <本项目目录>
+
+# 1) 登录 GitHub（首次需要，浏览器里完成授权）
+gh auth login
+
+# 2) 建仓库并推送（把 <你的用户名> 换成你的 GitHub 账号）
+git remote add origin https://github.com/<你的用户名>/quiz-app.git   # 仓库已存在时用这行
+# 或者让 gh 直接创建公开仓库并推上去：
+gh repo create quiz-app --public --source=. --remote=origin --push
+
+# 3) 开启 Pages：Settings → Pages → Source 选择 “GitHub Actions”
+#    也可以命令行打开设置页：
+gh repo view --web
+```
+
+之后访问 `https://<你的用户名>.github.io/quiz-app/` 即可，**手机用移动数据、换任何网络都能打开**。
+
+更新内容只要：
+
+```powershell
+git add -A
+git commit -m "更新题库"
+git push
+```
+
+> 绑定自己的域名：Settings → Pages → Custom domain，并在域名解析里加一条 CNAME。
+> 注意：自定义域名或仓库名一旦变化，等于换了站点地址，**用户手机上旧地址下的本地成绩不会跟着迁移**
+> （localStorage 按域名隔离）。要跨设备保留成绩，就得接后端（第五节）。
+
+### 8.2 其他托管方式对照
+
+| 方式 | 操作 | 特点 |
+| --- | --- | --- |
+| Netlify Drop | 浏览器打开 `app.netlify.com/drop`，把项目目录拖进去 | 不用装任何工具，秒出 HTTPS 链接 |
+| Vercel | 项目目录执行 `npx vercel --prod` | 命令行一键，支持自定义域名 |
+| Cloudflare Pages | 项目目录执行 `npx wrangler pages deploy .` | 国内访问速度通常较好 |
+| 自己的服务器 | 把目录丢到 Nginx 站点根目录 | 完全可控，需自行配 HTTPS |
+
+### 8.3 只想临时让手机看一眼（不部署）
+
+用 Cloudflare 快速隧道把本机映射到公网（电脑需保持开机）：
+
+```powershell
+curl.exe -L -o "$env:USERPROFILE\cloudflared.exe" https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
+& "$env:USERPROFILE\cloudflared.exe" tunnel --url http://localhost:5173
+```
+
+终端会给出一个 `https://xxx.trycloudflare.com` 地址，手机用流量即可打开。注意三点：
+地址每次重启都会变（旧地址下的本地成绩看不到）、电脑不能关机、
+**不要把隧道指向 `server/wechat-login-server.mjs` 那个端口**（它持有 AppSecret）。
 
 ---
 
