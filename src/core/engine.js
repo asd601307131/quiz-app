@@ -141,6 +141,36 @@ export function buildPaper(pool, opts = {}) {
 }
 
 /**
+ * 各题型的建议作答时长（分钟）。
+ *
+ * 依据：陕西成考专升本政治 150 分钟的题型配比反推——
+ *   选择题（35 题）+ 简答（4 题）+ 论述（2 题）= 150 分钟
+ *   选择 35×2 = 70 分钟，主观 4×10 + 2×18 = 76 分钟，合计约 146 分钟
+ * 练习模式下每题还要读解析，所以取值偏宽松一点点。
+ */
+export const MINUTES_PER_TYPE = {
+  single: 2, // 单选
+  judge: 2.5, // 判断题含说明理由
+  multiple: 3, // 多选
+  fill: 2.5, // 填空
+  short: 9, // 简答：分点作答
+  essay: 18, // 论述：摆原理 + 联系实际 + 归纳总结
+};
+
+/**
+ * 按题型构成估算整套题的建议时长（分钟）。
+ * @param {Array} questions 题目列表
+ * @param {number} minMinutes 下限，避免题量很少时时长过短
+ */
+export function estimateMinutes(questions = [], minMinutes = 5) {
+  const total = questions.reduce((sum, q) => {
+    const type = normalizeType(q.type);
+    return sum + (MINUTES_PER_TYPE[type] || MINUTES_PER_TYPE.single);
+  }, 0);
+  return Math.max(minMinutes, Math.round(total));
+}
+
+/**
  * 创建一次答题会话。
  * @param {object} config { mode:'practice'|'exam', pool, questions, chapterId, chapterIds, difficulty, difficulties, durationSec, title }
  */
@@ -161,6 +191,7 @@ export function createSession(config) {
     startedAt: Date.now(),
     durationSec, // 0 表示不限时
     remainingSec: durationSec,
+    estimatedMinutes: estimateMinutes(questions), // 按题型估算的建议时长
     submitted: false,
     result: null,
   };

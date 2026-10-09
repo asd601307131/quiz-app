@@ -249,20 +249,28 @@ function selectOption(session, question, letter) {
   session.revealed[question.id] = true;
   session.feedback[question.id] = engine.applyInstantFeedback(question, session.answers[question.id]);
 
+  // 默认停在原地，让用户看完正确答案与解析；
+  // 只有显式开启「自动下一题」设置时才延时跳转。
   const settings = store.getSettings();
   const isLast = session.currentIndex >= session.questions.length - 1;
+  const correct = session.feedback[question.id];
+
   if (settings.autoNext && !isLast) {
     rerender();
+    toast(correct ? '回答正确，即将进入下一题' : '回答错误，请看解析', 1200);
     setTimeout(() => {
       const cur = state.getSession();
       if (!cur || cur.submitted || cur !== session) return;
       cur.currentIndex += 1;
       rerender();
-    }, 650);
+    }, 1600);
     return;
   }
 
   rerender();
+
+  // 关掉自动跳转时给一个轻提示，提示用户手动进入下一题
+  if (!isLast) toast(correct ? '回答正确' : '回答错误，请看解析', 1300);
 }
 
 /** 填空题/简答题：输入变化先存进会话（不重渲染，避免输入框失焦） */
@@ -304,6 +312,21 @@ function confirmOptionAnswer(session, question) {
   }
   session.revealed[question.id] = true;
   session.feedback[question.id] = engine.applyInstantFeedback(question, session.answers[question.id]);
+  rerender();
+}
+
+/**
+ * 「直接看解析」：不写答案先看参考答案要点。
+ * 用于简答 / 论述 / 辨析说明理由这类文字题——有时就是不会写，
+ * 硬要求先输入才能看解析会浪费时间。
+ * 该题记为「未作答待自评」（feedback = null，不计入客观题得分）。
+ */
+function revealAnswer(session, question) {
+  session.revealed[question.id] = true;
+  const raw = session.answers[question.id];
+  session.feedback[question.id] = engine.hasAnswer(raw)
+    ? engine.applyInstantFeedback(question, raw)
+    : null;
   rerender();
 }
 
@@ -421,11 +444,20 @@ function renderQuiz() {
   const meta = h('div.quiz-meta', null, [
     h('div.quiz-meta__top', null, [
       h('span', { text: `已答 ${answered}/${total}` }),
-      isExam ? h('span', null, ['剩余 ', timerNode]) : h('span', { text: engine.typeLabel(q.type) }),
+      isExam
+        ? h('span', null, ['剩余 ', timerNode])
+        : h('span', {
+            text: `${engine.typeLabel(q.type)} · 建议 ${engine.MINUTES_PER_TYPE[qType] || engine.MINUTES_PER_TYPE.single} 分钟`,
+          }),
     ]),
     h('div.progress', null, [
       h('div.progress__bar', { style: { width: `${percent(answered, total)}%` } }),
     ]),
+    isExam
+      ? null
+      : h('div.quiz-meta__sub', {
+          text: `本套共 ${total} 题，按题型估算约需 ${session.estimatedMinutes || engine.estimateMinutes(session.questions)} 分钟`,
+        }),
   ]);
 
   const optionNodes = order.map((letter) => {
@@ -473,9 +505,12 @@ function renderQuiz() {
     const pointsNode = answerPointsNode(q);
 
     if (ok === null) {
-      // 简答题：不自动判分，展示参考答案要点供自评
+      // 简答/论述/辨析理由：不自动判分，展示参考答案要点供自评
+      const skipped = !isTextType || !String(myText || '').trim();
       feedbackNode = h('div.feedback.feedback--pending', null, [
-        h('div.feedback__title', { text: '📝 简答题 · 对照要点自评' }),
+        h('div.feedback__title', {
+          text: skipped ? '📖 参考答案与解析（本题未作答）' : '📝 对照要点自评',
+        }),
         pointsNode ||
           h('div.feedback__line', null, [
             '参考答案：',
@@ -505,9 +540,10 @@ function renderQuiz() {
   const isLast = session.currentIndex >= total - 1;
   const hasMyAnswer = isTextType ? Boolean(myText.trim()) : userAnswer.length > 0;
   // 多选/填空/简答：练习模式下需要先「确认答案」再看结果
+  // （这一类题目旁边同时提供「看解析」，允许跳过作答直接看参考答案）
   const needConfirm = !isExam && !revealed && (qType === 'multiple' || qType === 'fill' || qType === 'short');
 
-  const footer = h('div.footer-bar', null, [
+  const footerButtons = [
     h('button.btn.btn--ghost', {
       type: 'button',
       text: '上一题',
@@ -517,34 +553,55 @@ function renderQuiz() {
         rerender();
       },
     }),
-    needConfirm
-      ? h('button.btn.btn--primary', {
-          type: 'button',
-          text: '确认答案',
-          disabled: !hasMyAnswer,
-          onclick: () => (isTextType ? confirmText(session, q) : confirmOptionAnswer(session, q)),
-        })
-      : isLast
-        ? h('button.btn.btn--primary', {
-            type: 'button',
-            text: isExam ? '交卷' : '查看成绩',
-            onclick: () => (isExam ? confirmSubmit() : submit()),
-          })
-        : h('button.btn.btn--primary', {
-            type: 'button',
-            text: '下一题',
-            onclick: () => {
-              session.currentIndex = Math.min(total - 1, session.currentIndex + 1);
-              rerender();
-            },
-          }),
+  ];
+
+  if (needConfirm) {
+    // 文字题：主按钮确认作答，旁边给一个「直接看解析」，不必硬写
+    footerButtons.push(
+      h('button.btn.btn--ghost', {
+        type: 'button',
+        style: { flex: '0 0 auto', padding: '0 10px', whiteSpace: 'nowrap' },
+        text: '看解析',
+        onclick: () => revealAnswer(session, q),
+      }),
+      h('button.btn.btn--primary', {
+        type: 'button',
+        text: '确认答案',
+        disabled: !hasMyAnswer,
+        onclick: () => (isTextType ? confirmText(session, q) : confirmOptionAnswer(session, q)),
+      })
+    );
+  } else if (isLast) {
+    footerButtons.push(
+      h('button.btn.btn--primary', {
+        type: 'button',
+        text: isExam ? '交卷' : '查看成绩',
+        onclick: () => (isExam ? confirmSubmit() : submit()),
+      })
+    );
+  } else {
+    footerButtons.push(
+      h('button.btn.btn--primary', {
+        type: 'button',
+        text: '下一题',
+        onclick: () => {
+          session.currentIndex = Math.min(total - 1, session.currentIndex + 1);
+          rerender();
+        },
+      })
+    );
+  }
+
+  footerButtons.push(
     h('button.btn.btn--ghost', {
       type: 'button',
       style: { flex: '0 0 auto', padding: '0 12px' },
       text: '答题卡',
       onclick: () => go(`sheet?token=${encodeURIComponent(active ? active.token : '')}`),
-    }),
-  ]);
+    })
+  );
+
+  const footer = h('div.footer-bar', null, footerButtons);
 
   // 考试模式：保存答题卡入口 + 收藏标记
   const extraHeaderBtn = h('button', {

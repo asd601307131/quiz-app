@@ -360,7 +360,6 @@ export function SetupView({ mode = 'practice' } = {}) {
       updateSummary();
     },
   });
-
   const durationInput = h('input.input', {
     type: 'number',
     min: '1',
@@ -372,16 +371,44 @@ export function SetupView({ mode = 'practice' } = {}) {
   });
 
   const summary = h('div.tag.tag--primary', { text: '' });
+  /** 按当前筛选出的题型构成估算建议时长 */
+  const estimateHint = h('div.form-field__hint', { text: '' });
+
+  function currentEstimate() {
+    return engine.estimateMinutes(QUESTIONS_FILTERED().slice(0, setupState.count));
+  }
 
   function updateSummary() {
     const pool = availableCount();
     summary.textContent = `可抽题 ${pool} 道`;
+    const est = currentEstimate();
+    if (isExam) {
+      const current = Number(durationInput.value) || 0;
+      estimateHint.textContent =
+        current === est
+          ? `建议时长 ${est} 分钟（已采用）· 按选择题 3.5 分钟、简答 10 分钟、论述 20 分钟估算`
+          : `按题型估算建议 ${est} 分钟，点击右侧按钮采用`;
+    } else {
+      estimateHint.textContent = `按当前题量估算约需 ${est} 分钟`;
+    }
   }
   updateSummary();
 
   function availableCount() {
     return QUESTIONS_FILTERED().length;
   }
+
+  const applyEstimateBtn = h('button.btn.btn--sm.btn--outline', {
+    type: 'button',
+    text: '用建议时长',
+    onclick: () => {
+      const est = currentEstimate();
+      setupState.durationMin = est;
+      durationInput.value = String(est);
+      updateSummary();
+      toast(`已设为建议时长 ${est} 分钟`);
+    },
+  });
 
   const body = h('div.page__body', null, [
     h('div.card', null, [
@@ -400,9 +427,13 @@ export function SetupView({ mode = 'practice' } = {}) {
       isExam
         ? h('div.form-field', null, [
             h('label.form-field__label', { text: '考试时长（分钟）' }),
-            durationInput,
+            h('div.duration-row', null, [durationInput, applyEstimateBtn]),
+            estimateHint,
           ])
-        : null,
+        : h('div.form-field', null, [
+            h('label.form-field__label', { text: '预计用时' }),
+            estimateHint,
+          ]),
       h('div.flex-between.mt-8', null, [summary]),
     ]),
   ]);

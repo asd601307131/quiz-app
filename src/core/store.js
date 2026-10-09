@@ -317,9 +317,10 @@ export function resetAll() {
 
 const DEFAULT_SETTINGS = {
   shuffleOptions: false, // 考试模式是否打乱选项
-  autoNext: true, // 单选作答后自动跳下一题（练习模式）
+  // 默认关闭自动下一题：作答后要能看清正确答案与解析，跳太快等于白做
+  autoNext: false,
   examQuestionCount: 10,
-  examDurationMin: 10,
+  examDurationMin: 30,
 };
 
 export function getSettings() {

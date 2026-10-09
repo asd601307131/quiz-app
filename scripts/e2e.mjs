@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 端到端验证脚本（仅开发用，零依赖）。
  *
  * 用本机 Edge/Chrome 的无头模式，以手机视口真实渲染页面，走完整答题流程并截图。
@@ -313,12 +313,13 @@ async function main() {
   check('设置页可打开自动下一题', toggleOn.includes('switch--on'), toggleOn);
 
   await goto(`#/quiz/chapter/${CH.id}`);
+  // 自动跳题延时已改为 1600ms（让作答者能看清解析），这里必须等足够久
   const autoNextOn = await evaluate(`(() => {
     const before = document.querySelector('.stem__index').innerText;
     document.querySelector('.option').click();
     return new Promise((resolve) => setTimeout(() => {
       resolve({ before, after: document.querySelector('.stem__index').innerText });
-    }, 1100));
+    }, 2600));
   })()`);
   check('开启开关后自动跳到下一题', autoNextOn.before !== autoNextOn.after, JSON.stringify(autoNextOn));
 
