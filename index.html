@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#3b6ef5" />
+    <meta name="description" content="手机端答题应用：章节练习、随机组卷、错题本与成绩记录" />
+    <title>答题闯关 · 移动端答题应用</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>" />
+    <link rel="stylesheet" href="./src/styles/app.css" />
+  </head>
+  <body>
+    <!-- 挂载点：由 src/app.js 渲染 -->
+    <div id="app" class="app-shell">
+      <div class="boot">
+        <div class="boot__logo">📝</div>
+        <p>正在加载题库…</p>
+      </div>
+    </div>
+
+    <!-- 全局确认弹窗（模板） -->
+    <template id="tpl-confirm">
+      <div class="mask" data-role="mask">
+        <div class="dialog" role="dialog" aria-modal="true">
+          <h3 class="dialog__title" data-role="title"></h3>
+          <p class="dialog__text" data-role="text"></p>
+          <div class="dialog__actions">
+            <button class="btn btn--ghost" data-role="cancel" type="button">取消</button>
+            <button class="btn btn--primary" data-role="ok" type="button">确定</button>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- 轻提示容器 -->
+    <div id="toast-root" class="toast-root" aria-live="polite"></div>
+
+    <noscript>本应用需要启用 JavaScript 才能运行。</noscript>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,665 @@
+/**
+ * 首页 / 底部标签页（首页、错题本、记录、我的）
+ */
+
+import { h, header, tabbar, tag, progressBar, emptyState, toast, confirmDialog } from '../ui/ui.js';
+import * as store from '../core/store.js';
+import * as auth from '../services/auth.js';
+import { CHAPTERS, QUESTIONS, chapterStats, getQuestion, TYPE_LABEL } from '../data/questions.js';
+import { DIFFICULTIES } from '../core/engine.js';
+import { fmtTime, fmtDuration, percent } from '../core/utils.js';
+import { go } from '../app.js';
+
+function chapterProgress(chapterId) {
+  const sessions = store.getSessions().filter((s) => s.chapterId === chapterId);
+  const done = new Set();
+  sessions.forEach((s) => (s.detail || []).forEach((d) => done.add(d.questionId)));
+  const total = chapterStats(chapterId).total;
+  return { done: done.size, total, percent: percent(done.size, total) };
+}
+
+/* ------------------------------------------------------------------ */
+/* 首页                                                                */
+/* ------------------------------------------------------------------ */
+
+export function HomeView() {
+  const user = store.getUser();
+  const stats = store.getStats();
+  const sessions = store.getSessions();
+  const wrongList = store.getWrongBook();
+  const logged = auth.isLoggedIn();
+
+  const hero = h('section.hero', null, [
+    logged
+      ? null
+      : h('button.hero__login', {
+          type: 'button',
+          text: '登录 ›',
+          onclick: () => go('login'),
+        }),
+    h('div.hero__greet', { text: logged ? '欢迎回来' : '你好，欢迎使用' }),
+    h('div.hero__name', { text: user.nickname || '答题闯关' }),
+    h('div.hero__stats', null, [
+      h('div.hero__stat', null, [
+        h('b', { text: String(stats.answered || 0) }),
+        h('span', { text: '累计答题' }),
+      ]),
+      h('div.hero__stat', null, [
+        h('b', { text: `${percent(stats.correct, stats.answered)}%` }),
+        h('span', { text: '正确率' }),
+      ]),
+      h('div.hero__stat', null, [
+        h('b', { text: String(stats.streakDays || 0) }),
+        h('span', { text: '连续天数' }),
+      ]),
+    ]),
+  ]);
+
+  const modeGrid = h('div.mode-grid', null, [
+    modeCard('📚', '章节练习', '按知识点逐题练习，即时看解析', () => go('chapters')),
+    modeCard('🎲', '随机组卷', '自选章节与难度，随机抽题', () => go('setup/practice')),
+    modeCard('📝', '模拟考试', `限时 ${store.getSettings().examDurationMin} 分钟，交卷判分`, () =>
+      go('setup/exam')
+    ),
+    modeCard('📕', '错题复习', `共 ${wrongList.length} 道错题待攻克`, () => go('wrong')),
+  ]);
+
+  const recent = sessions.slice(0, 3);
+
+  const body = h('div.page__body', null, [
+    modeGrid,
+    h('section.section', null, [
+      h('div.section__head', null, [
+        h('h2.section__title', { text: '章节进度' }),
+        h('a.section__more', { href: '#/chapters', text: '全部章节 ›' }),
+      ]),
+      h(
+        'div.list',
+        null,
+        CHAPTERS.map((chapter) => {
+          const prog = chapterProgress(chapter.id);
+          return h(
+            'button.list__item',
+            { type: 'button', onclick: () => go(`chapter/${chapter.id}`) },
+            [
+              h('div.chapter-row__icon', { text: chapter.icon }),
+              h('div.list__main', null, [
+                h('div.list__title', { text: chapter.name }),
+                progressBar(prog.percent),
+                h('div.list__sub', { text: `已练 ${prog.done}/${prog.total} 题` }),
+              ]),
+              h('span.list__arrow', { text: '›' }),
+            ]
+          );
+        })
+      ),
+    ]),
+    recent.length
+      ? h('section.section', null, [
+          h('div.section__head', null, [
+            h('h2.section__title', { text: '最近记录' }),
+            h('a.section__more', { href: '#/history', text: '全部 ›' }),
+          ]),
+          h(
+            'div.list',
+            null,
+            recent.map((s) =>
+              h('button.list__item', { type: 'button', onclick: () => go(`result/${s.id}`) }, [
+                h('div.list__main', null, [
+                  h('div.list__title', { text: s.title || '练习' }),
+                  h('div.list__sub', {
+                    text: `${fmtTime(s.createdAt)} · ${s.correct}/${s.total} 题 · ${fmtDuration(s.durationSec)}`,
+                  }),
+                ]),
+                h('span.tag.tag--primary', { text: `${s.score} 分` }),
+              ])
+            )
+          ),
+        ])
+      : null,
+  ]);
+
+  return h('div.page', null, [hero, body, tabbar('home')]);
+}
+
+function modeCard(icon, title, desc, onclick) {
+  return h('button.mode-card', { type: 'button', onclick }, [
+    h('span.mode-card__icon', { text: icon }),
+    h('span.mode-card__title', { text: title }),
+    h('span.mode-card__desc', { text: desc }),
+  ]);
+}
+
+/* ------------------------------------------------------------------ */
+/* 章节列表                                                            */
+/* ------------------------------------------------------------------ */
+
+export function ChaptersView() {
+  const body = h(
+    'div.page__body',
+    null,
+    h(
+      'div.list',
+      null,
+      CHAPTERS.map((chapter) => {
+        const st = chapterStats(chapter.id);
+        const prog = chapterProgress(chapter.id);
+        return h('button.list__item', { type: 'button', onclick: () => go(`chapter/${chapter.id}`) }, [
+          h('div.chapter-row__icon', { text: chapter.icon }),
+          h('div.list__main', null, [
+            h('div.list__title', { text: chapter.name }),
+            h('div.list__sub', { text: chapter.desc }),
+            h('div.tag-row.mt-8', null, [
+              tag(`${st.total} 题`, 'primary'),
+              tag(`简单 ${st.easy}`, 'easy'),
+              tag(`中等 ${st.medium}`, 'medium'),
+              tag(`困难 ${st.hard}`, 'hard'),
+            ]),
+            progressBar(prog.percent),
+          ]),
+          h('span.list__arrow', { text: '›' }),
+        ]);
+      })
+    )
+  );
+
+  return h('div.page', null, [
+    header({ title: '章节练习', onBack: () => go('home') }),
+    body,
+    tabbar('home'),
+  ]);
+}
+
+/* ------------------------------------------------------------------ */
+/* 单章节详情                                                          */
+/* ------------------------------------------------------------------ */
+
+export function ChapterView({ id }) {
+  const chapter = CHAPTERS.find((c) => c.id === id);
+  if (!chapter) return NotFoundView();
+
+  const st = chapterStats(id);
+  const prog = chapterProgress(id);
+  const sessions = store.getSessions().filter((s) => s.chapterId === id).slice(0, 3);
+
+  const body = h('div.page__body', null, [
+    h('div.card', null, [
+      h('div.flex-between', null, [
+        h('div', null, [
+          h('div.list__title', { text: `${chapter.icon} ${chapter.name}` }),
+          h('div.list__sub', { text: chapter.desc }),
+        ]),
+      ]),
+      h('div.tag-row.mt-12', null, [
+        tag(`${st.total} 题`, 'primary'),
+        tag(`简单 ${st.easy}`, 'easy'),
+        tag(`中等 ${st.medium}`, 'medium'),
+        tag(`困难 ${st.hard}`, 'hard'),
+      ]),
+      h('div.mt-12', null, [
+        h('div.list__sub', { text: `练习进度 ${prog.done}/${prog.total}` }),
+        progressBar(prog.percent),
+      ]),
+    ]),
+    h('div.mt-16', null, [
+      h('button.btn.btn--primary.btn--block', {
+        type: 'button',
+        text: '开始顺序练习',
+        onclick: () => go(`quiz/chapter/${id}`),
+      }),
+    ]),
+    sessions.length
+      ? h('section.section', null, [
+          h('div.section__head', null, [h('h2.section__title', { text: '本章最近记录' })]),
+          h(
+            'div.list',
+            null,
+            sessions.map((s) =>
+              h('button.list__item', { type: 'button', onclick: () => go(`result/${s.id}`) }, [
+                h('div.list__main', null, [
+                  h('div.list__title', { text: `${s.correct}/${s.total} 题正确` }),
+                  h('div.list__sub', {
+                    text: `${fmtTime(s.createdAt)} · ${fmtDuration(s.durationSec)}`,
+                  }),
+                ]),
+                h('span.tag.tag--primary', { text: `${s.score} 分` }),
+              ])
+            )
+          ),
+        ])
+      : null,
+  ]);
+
+  return h('div.page', null, [
+    header({ title: chapter.name, onBack: () => go('chapters') }),
+    body,
+  ]);
+}
+
+/* ------------------------------------------------------------------ */
+/* 组卷配置                                                            */
+/* ------------------------------------------------------------------ */
+
+const setupState = {
+  chapters: [],
+  difficulties: [],
+  count: 10,
+  durationMin: 10,
+};
+
+export function SetupView({ mode = 'practice' } = {}) {
+  const isExam = mode === 'exam';
+  const maxCount = 60;
+  setupState.count = isExam ? store.getSettings().examQuestionCount : 10;
+  setupState.durationMin = store.getSettings().examDurationMin;
+
+  const chapterPicker = h(
+    'div.tag-row',
+    null,
+    CHAPTERS.map((c) =>
+      h(
+        `button.btn.btn--sm${setupState.chapters.includes(c.id) ? '.btn--primary' : '.btn--ghost'}`,
+        {
+          type: 'button',
+          text: c.name,
+          onclick: (e) => {
+            const i = setupState.chapters.indexOf(c.id);
+            if (i >= 0) setupState.chapters.splice(i, 1);
+            else setupState.chapters.push(c.id);
+            e.currentTarget.className = `btn btn--sm ${
+              setupState.chapters.includes(c.id) ? 'btn--primary' : 'btn--ghost'
+            }`;
+            updateSummary();
+          },
+        }
+      )
+    )
+  );
+
+  const diffPicker = h(
+    'div.tag-row',
+    null,
+    Object.values(DIFFICULTIES).map((d) =>
+      h(
+        `button.btn.btn--sm${setupState.difficulties.includes(d.key) ? '.btn--primary' : '.btn--ghost'}`,
+        {
+          type: 'button',
+          text: d.label,
+          onclick: (e) => {
+            const i = setupState.difficulties.indexOf(d.key);
+            if (i >= 0) setupState.difficulties.splice(i, 1);
+            else setupState.difficulties.push(d.key);
+            e.currentTarget.className = `btn btn--sm ${
+              setupState.difficulties.includes(d.key) ? 'btn--primary' : 'btn--ghost'
+            }`;
+            updateSummary();
+          },
+        }
+      )
+    )
+  );
+
+  const countInput = h('input.input', {
+    type: 'number',
+    min: '1',
+    max: String(maxCount),
+    value: String(setupState.count),
+    oninput: (e) => {
+      setupState.count = Math.max(1, Math.min(maxCount, Number(e.target.value) || 1));
+      updateSummary();
+    },
+  });
+
+  const durationInput = h('input.input', {
+    type: 'number',
+    min: '1',
+    max: '120',
+    value: String(setupState.durationMin),
+    oninput: (e) => {
+      setupState.durationMin = Math.max(1, Math.min(120, Number(e.target.value) || 1));
+    },
+  });
+
+  const summary = h('div.tag.tag--primary', { text: '' });
+
+  function updateSummary() {
+    const pool = availableCount();
+    summary.textContent = `可抽题 ${pool} 道`;
+  }
+  updateSummary();
+
+  function availableCount() {
+    return QUESTIONS_FILTERED().length;
+  }
+
+  const body = h('div.page__body', null, [
+    h('div.card', null, [
+      h('div.form-field', null, [
+        h('label.form-field__label', { text: '选择章节（不选 = 全部章节）' }),
+        chapterPicker,
+      ]),
+      h('div.form-field', null, [
+        h('label.form-field__label', { text: '选择难度（不选 = 全部难度）' }),
+        diffPicker,
+      ]),
+      h('div.form-field', null, [
+        h('label.form-field__label', { text: `题目数量（1 - ${maxCount}）` }),
+        countInput,
+      ]),
+      isExam
+        ? h('div.form-field', null, [
+            h('label.form-field__label', { text: '考试时长（分钟）' }),
+            durationInput,
+          ])
+        : null,
+      h('div.flex-between.mt-8', null, [summary]),
+    ]),
+  ]);
+
+  const startBtn = h('button.btn.btn--primary', {
+    type: 'button',
+    text: isExam ? '开始考试' : '开始练习',
+    onclick: () => {
+      const list = QUESTIONS_FILTERED();
+      if (!list.length) {
+        toast('当前筛选条件下没有题目，请调整条件');
+        return;
+      }
+      store.saveSettings(
+        isExam
+          ? { examQuestionCount: setupState.count, examDurationMin: setupState.durationMin }
+          : {}
+      );
+      const params = new URLSearchParams();
+      if (setupState.chapters.length) params.set('c', setupState.chapters.join(','));
+      if (setupState.difficulties.length) params.set('d', setupState.difficulties.join(','));
+      params.set('n', String(setupState.count));
+      if (isExam) params.set('t', String(setupState.durationMin));
+      go(`${isExam ? 'quiz/exam' : 'quiz/random'}?${params.toString()}`);
+    },
+  });
+
+  return h('div.page', null, [
+    header({ title: isExam ? '模拟考试设置' : '随机组卷', onBack: () => go('home') }),
+    body,
+    h('div.footer-bar', null, [startBtn]),
+  ]);
+}
+
+// 在 SetupView 内引用题库
+function QUESTIONS_FILTERED() {
+  return QUESTIONS.filter((q) => {
+    if (setupState.chapters.length && !setupState.chapters.includes(q.chapterId)) return false;
+    if (setupState.difficulties.length && !setupState.difficulties.includes(q.difficulty)) return false;
+    return true;
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* 错题本                                                              */
+/* ------------------------------------------------------------------ */
+
+export function WrongView({ auto = false } = {}) {
+  const list = store.getWrongBook();
+  const questions = list.map((item) => ({ item, question: getQuestion(item.questionId) })).filter((x) => x.question);
+
+  const startBtn = h('button.btn.btn--primary', {
+    type: 'button',
+    text: list.length ? '开始复习（按错次排序）' : '暂无错题',
+    disabled: !list.length,
+    onclick: () => {
+      const ids = questions
+        .slice()
+        .sort((a, b) => b.item.wrongCount - a.item.wrongCount)
+        .map((x) => x.question.id);
+      go(`quiz/wrong?ids=${ids.join(',')}`);
+    },
+  });
+
+  const body = h('div.page__body', null, [
+    list.length
+      ? h(
+          'div.list',
+          null,
+          questions.map(({ item, question }) =>
+            h('button.list__item', { type: 'button', onclick: () => go(`review/${question.id}`) }, [
+              h('div.list__main', null, [
+                h('div.list__title', { text: question.stem }),
+                h('div.tag-row.mt-8', null, [
+                  tag(TYPE_LABEL[question.type]),
+                  tag(DIFFICULTIES[question.difficulty].label, DIFFICULTIES[question.difficulty].color),
+                  tag(`错 ${item.wrongCount} 次`, 'hard'),
+                  tag(fmtTime(item.lastWrongAt)),
+                ]),
+              ]),
+              h('span.list__arrow', { text: '›' }),
+            ])
+          )
+        )
+      : emptyState('🎉', '错题本是空的，继续保持！\n答错的题会自动收录到这里。'),
+  ]);
+
+  const actions = h('div.footer-bar', null, [
+    startBtn,
+    list.length
+      ? h('button.btn.btn--danger', {
+          style: { flex: '0 0 auto', padding: '0 16px' },
+          type: 'button',
+          text: '清空',
+          onclick: async () => {
+            const ok = await confirmDialog({ title: '清空错题本', text: '清空后无法恢复，确定继续？' });
+            if (!ok) return;
+            store.clearWrongBook();
+            toast('错题本已清空');
+            go('wrong');
+          },
+        })
+      : null,
+  ]);
+
+  return h('div.page', null, [
+    header({ title: '错题本', onBack: auto ? null : () => go('home'), extra: `${list.length} 道` }),
+    body,
+    actions,
+    tabbar('wrong'),
+  ]);
+}
+
+/* ------------------------------------------------------------------ */
+/* 答题记录                                                            */
+/* ------------------------------------------------------------------ */
+
+export function HistoryView() {
+  const sessions = store.getSessions();
+  const stats = store.getStats();
+
+  const body = h('div.page__body', null, [
+    h('div.stat-grid', null, [
+      h('div.stat-box', null, [h('b', { text: String(stats.practice || 0) }), h('span', { text: '练习次数' })]),
+      h('div.stat-box', null, [h('b', { text: String(stats.exams || 0) }), h('span', { text: '考试次数' })]),
+      h('div.stat-box', null, [
+        h('b', { text: String(stats.bestScore || 0) }),
+        h('span', { text: '最高分' }),
+      ]),
+      h('div.stat-box', null, [
+        h('b', { text: fmtDuration(stats.totalDurationSec || 0) }),
+        h('span', { text: '累计用时' }),
+      ]),
+    ]),
+    sessions.length
+      ? h('section.section', null, [
+          h('div.section__head', null, [
+            h('h2.section__title', { text: `答题记录（${sessions.length}）` }),
+            h('button.section__more', {
+              type: 'button',
+              text: '清空',
+              onclick: async () => {
+                const ok = await confirmDialog({ title: '清空记录', text: '将删除全部答题记录，确定继续？' });
+                if (!ok) return;
+                store.clearSessions();
+                toast('记录已清空');
+                go('history');
+              },
+            }),
+          ]),
+          h(
+            'div.list',
+            null,
+            sessions.map((s) =>
+              h('button.list__item', { type: 'button', onclick: () => go(`result/${s.id}`) }, [
+                h('div.list__main', null, [
+                  h('div.list__title', { text: s.title || '练习' }),
+                  h('div.list__sub', {
+                    text: `${fmtTime(s.createdAt)} · 正确 ${s.correct}/${s.total} · ${fmtDuration(
+                      s.durationSec
+                    )}`,
+                  }),
+                ]),
+                h(
+                  `span.tag.tag--${s.accuracy >= 80 ? 'easy' : s.accuracy >= 60 ? 'medium' : 'hard'}`,
+                  { text: `${s.score} 分` }
+                ),
+              ])
+            )
+          ),
+        ])
+      : emptyState('📊', '还没有答题记录\n完成一次练习或考试后就会出现在这里。'),
+  ]);
+
+  return h('div.page', null, [header({ title: '答题记录' }), body, tabbar('history')]);
+}
+
+/* ------------------------------------------------------------------ */
+/* 我的                                                                */
+/* ------------------------------------------------------------------ */
+
+export function ProfileView() {
+  const user = store.getUser();
+  const stats = store.getStats();
+  const settings = store.getSettings();
+  const logged = auth.isLoggedIn();
+
+  const head = h('section.profile-head', null, [
+    h('div.avatar', null, [
+      user.avatar ? h('img', { src: user.avatar, alt: '头像' }) : document.createTextNode('🙂'),
+    ]),
+    h('div', null, [
+      h('div.profile-head__name', { text: user.nickname || '未登录用户' }),
+      h('div.profile-head__sub', {
+        text: logged
+          ? user.provider === 'wechat-demo'
+            ? '微信登录（演示模式）'
+            : user.provider === 'wechat'
+              ? '微信登录'
+              : '本地账号'
+          : '登录后可同步成绩到云端',
+      }),
+    ]),
+  ]);
+
+  const body = h('div.page__body', null, [
+    head,
+    h('div.stat-grid.mt-16', null, [
+      h('div.stat-box', null, [
+        h('b', { text: `${percent(stats.correct, stats.answered)}%` }),
+        h('span', { text: '总正确率' }),
+      ]),
+      h('div.stat-box', null, [h('b', { text: String(stats.answered || 0) }), h('span', { text: '累计答题' })]),
+    ]),
+    h('section.section', null, [
+      h('div.section__head', null, [h('h2.section__title', { text: '答题设置' })]),
+      h('div.card', null, [
+        switchRow(
+          '单选自动下一题',
+          '练习模式下作答后自动跳到下一题',
+          settings.autoNext,
+          (v) => store.saveSettings({ autoNext: v })
+        ),
+        switchRow(
+          '考试打乱选项',
+          '开启后单选题的选项顺序会随机',
+          settings.shuffleOptions,
+          (v) => store.saveSettings({ shuffleOptions: v })
+        ),
+      ]),
+    ]),
+    h('section.section', null, [
+      h('div.section__head', null, [h('h2.section__title', { text: '账号' })]),
+      h('div.list', null, [
+        logged
+          ? h('button.list__item', {
+              type: 'button',
+              onclick: async () => {
+                const ok = await confirmDialog({ title: '退出登录', text: '退出后本地记录仍会保留。' });
+                if (!ok) return;
+                auth.logout();
+                toast('已退出登录');
+                go('profile');
+              },
+            }, [h('div.list__main', null, [h('div.list__title', { text: '退出登录' })]), h('span.list__arrow', { text: '›' })])
+          : h('button.list__item', {
+              type: 'button',
+              onclick: () => go('login'),
+            }, [
+              h('div.list__main', null, [
+                h('div.list__title', { text: '登录 / 注册' }),
+                h('div.list__sub', { text: '本地账号或微信一键登录' }),
+              ]),
+              h('span.list__arrow', { text: '›' }),
+            ]),
+        h('button.list__item', {
+          type: 'button',
+          onclick: async () => {
+            const ok = await confirmDialog({
+              title: '重置本地数据',
+              text: '将清除账号、成绩记录与错题本，确定继续？',
+              okText: '重置',
+            });
+            if (!ok) return;
+            store.resetAll();
+            toast('本地数据已重置');
+            go('home');
+          },
+        }, [
+          h('div.list__main', null, [h('div.list__title', { text: '重置本地数据' })]),
+          h('span.list__arrow', { text: '›' }),
+        ]),
+      ]),
+    ]),
+    h('p.text-center.text-muted.text-sm.mt-20', {
+      text: '答题闯关 v1.0 · 数据存储：浏览器本地（localStorage）',
+    }),
+  ]);
+
+  return h('div.page', null, [header({ title: '我的' }), body, tabbar('profile')]);
+}
+
+function switchRow(title, desc, value, onChange) {
+  const sw = h(`div.switch${value ? '.switch--on' : ''}`);
+  return h('div.switch-row', null, [
+    h('div.switch-row__main', null, [
+      h('div.switch-row__title', { text: title }),
+      h('div.switch-row__desc', { text: desc }),
+    ]),
+    h('button', {
+      type: 'button',
+      'aria-label': title,
+      onclick: () => {
+        const next = !sw.classList.contains('switch--on');
+        sw.classList.toggle('switch--on', next);
+        onChange(next);
+      },
+    }, [sw]),
+  ]);
+}
+
+/* ------------------------------------------------------------------ */
+/* 404                                                                 */
+/* ------------------------------------------------------------------ */
+
+export function NotFoundView() {
+  return h('div.page', null, [
+    header({ title: '页面不存在', onBack: () => go('home') }),
+    h('div.page__body', null, emptyState('🧭', '没有找到这个页面')),
+  ]);
+}

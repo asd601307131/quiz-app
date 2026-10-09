@@ -1,0 +1,16 @@
+{
+  "name": "quiz-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "手机端答题应用（H5）：章节练习、随机组卷、错题本、成绩记录",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "start": "node scripts/serve.mjs",
+    "wechat": "node server/wechat-login-server.mjs",
+    "check": "node scripts/check.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

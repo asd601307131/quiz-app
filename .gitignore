@@ -1,0 +1,24 @@
+# 依赖与构建产物（本项目无需安装依赖，留作兜底）
+node_modules/
+dist/
+build/
+
+# 端到端验证时浏览器产生的临时配置目录
+screenshots/.profile*
+.profile*/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 本地环境变量（微信 AppSecret 等，切勿提交）
+.env
+.env.local
+.env.*.local
+
+# 日志
+*.log
+npm-debug.log*
