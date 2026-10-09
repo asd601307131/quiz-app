@@ -1,4 +1,4 @@
-﻿# 答题闯关 · 手机端答题应用（H5）
+# 答题闯关 · 手机端答题应用（H5）
 
 一个**零依赖、纯前端**的手机答题应用，打开即用：章节练习、随机组卷、限时模拟考试、错题本、成绩记录与用户体系。
 默认数据全部存在浏览器本地（localStorage），不需要后端；需要微信登录或云端同步时，接上附带的示例后端即可。
@@ -188,7 +188,9 @@ quiz-app/
 │  ├─ e2e-catalog.mjs             板块导航与技巧板块验证（27 项）
 │  ├─ make-template.mjs           生成题库导入模板
 │  ├─ import-questions.mjs        CSV → questions.js（含校验）
-│  ├─ parse-politics.mjs          教材真题文本 → CSV
+│  ├─ parse-politics.mjs          教材真题文本 → CSV（客观题）
+│  ├─ parse-subjective.mjs        主观题结构化解析（题干与答案严格配对）
+│  ├─ rebuild-bank.mjs            一键重建题库（按序导入全部来源）
 │  └─ parse-real-exams.mjs        陕西历年真题 → CSV
 ├─ tools/                         辅助脚本
 │  ├─ extract-pdf.py              PDF → 文本（需 pypdf）
@@ -353,6 +355,7 @@ ode scripts/e2e-exam.mjs 另有 20 项断言，专门验证成考题库（真题
 
 ```bash
 node tools/audit-bank.mjs work/成考题库-政治.csv work/variants-哲学.csv ... --sample 5
+node tools/pair-audit.mjs work/成考题库-主观题.csv   # 主观题题干/答案配对检查
 ```
 
 检查以下问题，并给出答案分布直方图便于发现「答案扎堆」：
@@ -366,6 +369,7 @@ node tools/audit-bank.mjs work/成考题库-政治.csv work/variants-哲学.csv 
 | 题型字段匹配 | 判断题答案须为 A/B；填空须有答案；简答须有参考答案 |
 | 答案分布 | 任一选项占比 >40% 或 <10% 时提醒（避免「全选 B」也能蒙对） |
 | **幻觉检测** | 解析里出现的书名号/引号表述若不在教材原文中，逐条列出供人工确认 |
+| **配对检查** | 主观题题干与参考答案关键词重合度过低，或参考答案误收答题技巧文字（`tools/pair-audit.mjs`） |
 
 运行后按提示修掉「错误」项即可；「提醒」项需人工判断（例如反向题表述是否够明确）。
 
