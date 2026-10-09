@@ -172,6 +172,20 @@ check(
 const seedPaper = buildPaper(QUESTIONS, { seedQuestions: ['js-01', 'css-01', '不存在的题'] });
 check('错题重练按 id 取题并忽略无效 id', seedPaper.length === 2);
 
+/**
+ * 判分断言使用「确定性卷子」。
+ * 不能随机抽题：题库里存在“所有选项都正确”的多选题（如 js-05、web-11、css-04），
+ * 一旦抽到就构造不出全错答案，断言会随机失败（这是测试用例的坑，不是应用的 bug）。
+ * 下面这组题都至少有一个错误选项，且覆盖单选/多选/判断与三种难度。
+ */
+const FIXED_PAPER_IDS = ['web-01', 'css-01', 'js-01', 'js-04', 'eng-01', 'net-09', 'net-01'];
+const fixedPaper = buildPaper(QUESTIONS, { seedQuestions: FIXED_PAPER_IDS });
+check('确定性卷子取题完整', fixedPaper.length === FIXED_PAPER_IDS.length);
+check(
+  '确定性卷子每题都存在错误选项（可构造全错）',
+  fixedPaper.every((q) => q.options.some((_, i) => !q.answer.includes(LETTERS[i])))
+);
+
 const session = createSession({ mode: 'practice', questions: paper, title: '测试' });
 check('会话答案初始为空', answeredCount(session) === 0);
 
@@ -186,17 +200,17 @@ check('多选切换累加', normalizeAnswer(ms.answers[multiQ.id]).join(',') ===
 toggleAnswer(ms, multiQ.id, 'A');
 check('多选再次点击取消', normalizeAnswer(ms.answers[multiQ.id]).join(',') === 'B');
 
-// 构造一张全对的卷子
-const examSession = createSession({ mode: 'exam', questions: paper });
-paper.forEach((q) => setAnswer(examSession, q.id, q.answer));
+// 构造一张全对的卷子（用确定性卷子，保证可复现）
+const examSession = createSession({ mode: 'exam', questions: fixedPaper });
+fixedPaper.forEach((q) => setAnswer(examSession, q.id, q.answer));
 const fullResult = gradeSession(examSession, { recordToStore: false });
 check('全对得 100 分', fullResult.score === 100, `实际 ${fullResult.score}`);
 check('全对正确率 100%', fullResult.accuracy === 100);
 check('全对无错题', fullResult.wrong === 0 && fullResult.unanswered === 0);
 
 // 构造一张全错的卷子
-const badSession = createSession({ mode: 'exam', questions: paper });
-paper.forEach((q) => {
+const badSession = createSession({ mode: 'exam', questions: fixedPaper });
+fixedPaper.forEach((q) => {
   const allKeys = LETTERS.slice(0, q.options.length);
   const wrong = allKeys.filter((k) => !q.answer.includes(k));
   if (wrong.length) setAnswer(badSession, q.id, [wrong[0]]);
@@ -205,15 +219,23 @@ const zeroResult = gradeSession(badSession, { recordToStore: false });
 check('全错得 0 分', zeroResult.score === 0, `实际 ${zeroResult.score}`);
 check(
   '全错错题数等于题量',
-  zeroResult.wrong === paper.length,
-  `wrong=${zeroResult.wrong} total=${paper.length} 未作答=${zeroResult.unanswered}`
+  zeroResult.wrong === fixedPaper.length,
+  `wrong=${zeroResult.wrong} total=${fixedPaper.length} 未作答=${zeroResult.unanswered}`
 );
 
 // 未作答
-const emptySession = createSession({ mode: 'exam', questions: paper });
+const emptySession = createSession({ mode: 'exam', questions: fixedPaper });
 const emptyResult = gradeSession(emptySession, { recordToStore: false });
-check('未作答全部计入 unanswered', emptyResult.unanswered === paper.length);
+check('未作答全部计入 unanswered', emptyResult.unanswered === fixedPaper.length);
 check('未作答得 0 分', emptyResult.score === 0);
+
+// 随机抽题也要能稳定判分（对随机卷子做一次全对判分，验证不依赖具体题目）
+const randomFull = createSession({ mode: 'exam', questions: paper });
+paper.forEach((q) => setAnswer(randomFull, q.id, q.answer));
+check(
+  '随机卷子全对同样得 100 分',
+  gradeSession(randomFull, { recordToStore: false }).score === 100
+);
 
 console.log(`\n结果: ${passed} 通过, ${failed} 失败\n`);
 process.exit(failed ? 1 : 0);
