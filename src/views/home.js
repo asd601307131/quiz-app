@@ -6,6 +6,7 @@ import { h, header, tabbar, tag, progressBar, emptyState, toast, confirmDialog }
 import * as store from '../core/store.js';
 import * as auth from '../services/auth.js';
 import { CHAPTERS, QUESTIONS, chapterStats, getQuestion } from '../data/questions.js';
+import { SUBJECTS, chapterIdsOfSubject } from '../data/subjects.js';
 import * as engine from '../core/engine.js';
 import { fmtTime, fmtDuration, percent } from '../core/utils.js';
 import { go } from '../app.js';
@@ -97,45 +98,53 @@ export function HomeView() {
   ]);
 
   const modeGrid = h('div.mode-grid', null, [
-    modeCard('📚', '章节练习', '按知识点逐题练习，即时看解析', () => go('chapters')),
-    modeCard('🎲', '随机组卷', '自选章节与难度，随机抽题', () => go('setup/practice')),
+    modeCard('📚', '题库分类', '政治 / 英语两大板块，按考点逐章刷', () => go('subjects')),
+    modeCard('🎯', '答题技巧', '分题型作答法、作文句型、考场规范', () => go('strategy')),
+    modeCard('🎲', '随机组卷', '自选板块与难度，随机抽题', () => go('setup/practice')),
     modeCard('📝', '模拟考试', `限时 ${store.getSettings().examDurationMin} 分钟，交卷判分`, () =>
       go('setup/exam')
     ),
     modeCard('📕', '错题复习', `共 ${wrongList.length} 道错题待攻克`, () => go('wrong')),
+    modeCard('📊', '答题记录', '历史成绩、正确率与逐题解析', () => go('history')),
   ]);
+
+  // 两大板块入口
+  const subjectCards = SUBJECTS.map((subject) => {
+    const ids = chapterIdsOfSubject(subject.id);
+    let done = 0;
+    let total = 0;
+    for (const cid of ids) {
+      const p = chapterProgress(cid);
+      done += p.done;
+      total += p.total;
+    }
+    const pct = percent(done, total);
+    return h('button.subject-bar', { type: 'button', onclick: () => go(`subject/${subject.id}`) }, [
+      h('span.subject-bar__icon', { text: subject.icon }),
+      h('div.list__main', null, [
+        h('div.flex-between', null, [
+          h('div.list__title', { text: subject.name }),
+          h('span.tag.tag--primary', { text: `${total} 题` }),
+        ]),
+        progressBar(pct),
+        h('div.list__sub', { text: `已练 ${done}/${total}` }),
+      ]),
+      h('span.list__arrow', { text: '›' }),
+    ]);
+  });
 
   const recent = sessions.slice(0, 3);
 
   const body = h('div.page__body', null, [
-    modeGrid,
-    h('div.mt-16', null, subjectiveCard),
     h('section.section', null, [
       h('div.section__head', null, [
-        h('h2.section__title', { text: '章节进度' }),
-        h('a.section__more', { href: '#/chapters', text: '全部章节 ›' }),
+        h('h2.section__title', { text: '题库板块' }),
+        h('a.section__more', { href: '#/subjects', text: '全部 ›' }),
       ]),
-      h(
-        'div.list',
-        null,
-        CHAPTERS.map((chapter) => {
-          const prog = chapterProgress(chapter.id);
-          return h(
-            'button.list__item',
-            { type: 'button', onclick: () => go(`chapter/${chapter.id}`) },
-            [
-              h('div.chapter-row__icon', { text: chapter.icon }),
-              h('div.list__main', null, [
-                h('div.list__title', { text: chapter.name }),
-                progressBar(prog.percent),
-                h('div.list__sub', { text: `已练 ${prog.done}/${prog.total} 题` }),
-              ]),
-              h('span.list__arrow', { text: '›' }),
-            ]
-          );
-        })
-      ),
+      h('div.subject-bars', null, subjectCards),
     ]),
+    h('div.mt-16', null, subjectiveCard),
+    modeGrid,
     recent.length
       ? h('section.section', null, [
           h('div.section__head', null, [

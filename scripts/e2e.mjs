@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 端到端验证脚本（仅开发用，零依赖）。
  *
  * 用本机 Edge/Chrome 的无头模式，以手机视口真实渲染页面，走完整答题流程并截图。
@@ -217,7 +217,7 @@ async function main() {
   await send('Page.navigate', { url: `${BASE}/#/home` });
   await sleep(1500);
   const homeText = await evaluate('document.body.innerText');
-  check('首页渲染成功', homeText.includes('章节练习') && homeText.includes('模拟考试'));
+  check('首页渲染成功', homeText.includes('题库板块') && homeText.includes('模拟考试'));
   check('显示登录状态或登录入口', homeText.includes('登录') || homeText.includes('累计答题'), homeText.slice(0, 30));
   await shot('01-home');
 

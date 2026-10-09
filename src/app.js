@@ -2,7 +2,10 @@
  * 应用入口：hash 路由 + 视图挂载 + 全局错误兜底。
  *
  * 路由表：
- *   #/home | #/chapters | #/chapter/:id
+ *   #/home
+ *   #/subjects | #/subject/:id           两大板块（政治 / 英语）与科目详情
+ *   #/strategy | #/strategy/:id          答题技巧板块（内容讲解）
+ *   #/chapters | #/chapter/:id           章节列表（兼容入口）与章节详情
  *   #/setup/practice | #/setup/exam
  *   #/quiz/chapter/:id | #/quiz/random | #/quiz/exam | #/quiz/wrong
  *   #/sheet | #/result/:id | #/review/:questionId
@@ -24,9 +27,13 @@ import {
 } from './views/home.js';
 import { QuizView, SheetView, ResultView, ReviewView, __resetQuiz } from './views/quiz.js';
 import { LoginView } from './views/login.js';
+import { SubjectsView, SubjectView, StrategyView, StrategyTopicView } from './views/catalog.js';
 
 const TITLES = {
   home: '答题闯关',
+  subjects: '题库板块',
+  subject: '板块',
+  strategy: '答题技巧',
   chapters: '章节练习',
   setup: '组卷',
   quiz: '答题中',
@@ -89,6 +96,12 @@ function resolveView({ route, base, segments, query }) {
   switch (base) {
     case 'home':
       return HomeView();
+    case 'subjects':
+      return SubjectsView();
+    case 'subject':
+      return SubjectView({ id: segments[1] });
+    case 'strategy':
+      return segments[1] ? StrategyTopicView({ id: segments[1] }) : StrategyView();
     case 'chapters':
       return ChaptersView();
     case 'chapter':

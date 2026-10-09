@@ -101,8 +101,9 @@ export function header({ title = '', onBack = null, extra = null } = {}) {
 
 export const TABS = [
   { route: 'home', label: '首页', icon: '🏠' },
+  { route: 'subjects', label: '题库', icon: '📚' },
+  { route: 'strategy', label: '技巧', icon: '🎯' },
   { route: 'wrong', label: '错题本', icon: '📕' },
-  { route: 'history', label: '记录', icon: '📊' },
   { route: 'profile', label: '我的', icon: '👤' },
 ];
 

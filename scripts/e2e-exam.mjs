@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 成考题库专用验证：确认新题库在真实浏览器里可正常练习。
  *
  *   node scripts/e2e-exam.mjs http://localhost:5213
@@ -105,7 +105,7 @@ async function main() {
     text: document.body.innerText,
     chapters: document.querySelectorAll('.list__item').length,
   })`);
-  check('首页渲染成功', home.text.includes('章节练习'));
+  check('首页渲染成功', home.text.includes('题库板块') && home.text.includes('模拟考试'));
   check('首页展示成考章节', home.text.includes('政治') || home.text.includes('真题') || home.text.includes('英语'));
   await shot('30-home-exam-bank');
 

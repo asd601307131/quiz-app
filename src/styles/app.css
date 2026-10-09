@@ -222,7 +222,8 @@ ol {
   height: calc(var(--tabbar-h) + var(--safe-bottom));
   padding-bottom: var(--safe-bottom);
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* 与 ui.js 的 TABS 数量保持一致：首页 / 题库 / 技巧 / 错题本 / 我的 */
+  grid-template-columns: repeat(5, 1fr);
   background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(12px);
   border-top: 1px solid var(--c-line);
@@ -237,9 +238,10 @@ ol {
   align-items: center;
   justify-content: center;
   gap: 2px;
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   color: var(--c-text-3);
   transition: color 0.15s;
+  min-width: 0;
 }
 
 .tabbar__item--active {
@@ -248,7 +250,7 @@ ol {
 }
 
 .tabbar__icon {
-  font-size: 1.22rem;
+  font-size: 1.16rem;
   line-height: 1;
 }
 
@@ -1457,6 +1459,201 @@ ol {
 
 .dialog__actions .btn {
   flex: 1;
+}
+
+/* --------------------------------------------------------------------------
+   科目板块（题库两级导航）
+   -------------------------------------------------------------------------- */
+
+.mode-grid--single {
+  grid-template-columns: 1fr;
+}
+
+.subject-card {
+  min-height: 0;
+  gap: 8px;
+}
+
+.subject-card__icon {
+  font-size: 1.9rem;
+}
+
+.subject-card__meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 2px 0 4px;
+}
+
+.subject-card__progress {
+  font-size: 0.72rem;
+  color: var(--c-text-3);
+}
+
+.subject-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.subject-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--c-card);
+  border-radius: var(--radius-m);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-s);
+  text-align: left;
+  width: 100%;
+}
+
+.subject-bar:active {
+  background: #f7f9fd;
+}
+
+.subject-bar__icon {
+  font-size: 1.6rem;
+  flex: none;
+}
+
+/* --------------------------------------------------------------------------
+   答题技巧板块（内容讲解）
+   -------------------------------------------------------------------------- */
+
+.strategy-head {
+  padding: 4px 2px 14px;
+  border-bottom: 1px solid var(--c-line);
+  margin-bottom: 14px;
+}
+
+.strategy-title {
+  font-size: 1.24rem;
+  font-weight: 700;
+  line-height: 1.5;
+  margin-top: 10px;
+}
+
+.strategy-summary {
+  font-size: 0.86rem;
+  color: var(--c-text-2);
+  margin-top: 6px;
+  line-height: 1.7;
+}
+
+.strategy-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.strategy-p {
+  font-size: 0.9rem;
+  line-height: 1.85;
+  color: var(--c-text);
+  background: var(--c-card);
+  border-radius: var(--radius-m);
+  padding: 13px 15px;
+  box-shadow: var(--shadow-s);
+}
+
+.strategy-h {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-top: 6px;
+  padding-left: 10px;
+  border-left: 4px solid var(--c-primary);
+  line-height: 1.5;
+}
+
+.strategy-list {
+  background: var(--c-card);
+  border-radius: var(--radius-m);
+  padding: 13px 15px 13px 32px;
+  box-shadow: var(--shadow-s);
+  list-style: disc;
+}
+
+.strategy-list__item {
+  font-size: 0.88rem;
+  line-height: 1.8;
+  color: var(--c-text-2);
+  margin-bottom: 7px;
+}
+
+.strategy-list__item:last-child {
+  margin-bottom: 0;
+}
+
+.strategy-list__item::marker {
+  color: var(--c-primary);
+}
+
+.strategy-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-s);
+  background: var(--c-card);
+}
+
+.strategy-table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 320px;
+  font-size: 0.82rem;
+}
+
+.strategy-table th,
+.strategy-table td {
+  padding: 9px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--c-line);
+  line-height: 1.6;
+}
+
+.strategy-table th {
+  background: var(--c-primary-soft);
+  color: var(--c-primary-dark);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.strategy-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.strategy-table td:first-child {
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.strategy-tip {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  border-radius: var(--radius-m);
+  padding: 12px 14px;
+  font-size: 0.86rem;
+  line-height: 1.8;
+}
+
+.strategy-tip--good {
+  background: var(--c-green-soft);
+  border: 1px solid rgba(22, 163, 74, 0.22);
+  color: #14663a;
+}
+
+.strategy-tip--warn {
+  background: var(--c-orange-soft);
+  border: 1px solid rgba(234, 154, 18, 0.28);
+  color: #8a5a06;
+}
+
+.strategy-tip__icon {
+  flex: none;
+  font-size: 0.95rem;
+  line-height: 1.7;
 }
 
 .toast-root {
