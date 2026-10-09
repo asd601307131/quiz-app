@@ -290,17 +290,25 @@ cd <本项目目录>
 # 1) 登录 GitHub（首次需要，浏览器里完成授权）
 gh auth login
 
-# 2) 建仓库并推送（把 <你的用户名> 换成你的 GitHub 账号）
-git remote add origin https://github.com/<你的用户名>/quiz-app.git   # 仓库已存在时用这行
-# 或者让 gh 直接创建公开仓库并推上去：
+# 2) 建仓库并推送
 gh repo create quiz-app --public --source=. --remote=origin --push
 
-# 3) 开启 Pages：Settings → Pages → Source 选择 “GitHub Actions”
-#    也可以命令行打开设置页：
-gh repo view --web
+# 3) 启用 Pages（二选一）
+#    方式 A（推荐，命令行搞定，无需点界面）：
+gh api --method POST repos/<你的用户名>/quiz-app/pages -f build_type=workflow
+#    方式 B（界面）：仓库 → Settings → 左侧 Pages → Source 选 "GitHub Actions"
 ```
 
+> 顺序很重要：**先启用 Pages，再让工作流跑**。
+> 如果 Pages 还没启用就推代码，工作流会在 `Setup Pages` 这一步报
+> `Get Pages site failed ... Not Found` 而失败——这不是代码问题。
+> 现在的 `deploy-pages.yml` 已加上 `enablement: true`，即使忘了第 3 步，
+> 首次运行也会自动启用 Pages（需要仓库管理员权限）。
+>
+> 已经失败过的话，补启用后用 `gh run rerun <run-id>` 重跑即可，不用重新推代码。
+
 之后访问 `https://<你的用户名>.github.io/quiz-app/` 即可，**手机用移动数据、换任何网络都能打开**。
+首次部署后大约 1 分钟生效；每次 `git push` 会自动重新发布。
 
 更新内容只要：
 

@@ -39,6 +39,10 @@ jobs:
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
+        with:
+          # enablement: true 让工作流在 Pages 尚未启用时自动启用（需要仓库管理员权限），
+          # 否则首次运行会因为 "Get Pages site failed / Not Found" 直接失败。
+          enablement: true
 
       - name: 自测（题库与判分引擎）
         run: node scripts/check.mjs
