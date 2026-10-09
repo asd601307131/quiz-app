@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 首页 / 底部标签页（首页、错题本、记录、我的）
  */
 
@@ -14,8 +14,27 @@ function chapterProgress(chapterId) {
   const sessions = store.getSessions().filter((s) => s.chapterId === chapterId);
   const done = new Set();
   sessions.forEach((s) => (s.detail || []).forEach((d) => done.add(d.questionId)));
+  // 单题练习与「已掌握」标记的题目也计入本章进度
+  store.getMasteredIds().forEach((id) => {
+    const q = getQuestion(id);
+    if (q && q.chapterId === chapterId) done.add(id);
+  });
   const total = chapterStats(chapterId).total;
   return { done: done.size, total, percent: percent(done.size, total) };
+}
+
+/** 主观题掌握进度：冲刺阶段用它判断还差多少 */
+function subjectiveProgress() {
+  const subjective = QUESTIONS.filter((q) => q.type === 'short' || q.type === 'judge');
+  const mastered = store.getMasteredIds().filter((id) => {
+    const q = getQuestion(id);
+    return q && (q.type === 'short' || q.type === 'judge');
+  });
+  return {
+    total: subjective.length,
+    mastered: mastered.length,
+    percent: percent(mastered.length, subjective.length),
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -55,6 +74,28 @@ export function HomeView() {
     ]),
   ]);
 
+  // 主观题掌握进度：冲刺阶段最关心的一个数字
+  const subj = subjectiveProgress();
+  const subjectiveCard = h('div.card', null, [
+    h('div.flex-between', null, [
+      h('div.list__title', { text: '主观题掌握进度' }),
+      h('span.tag.tag--primary', { text: `${subj.mastered}/${subj.total}` }),
+    ]),
+    progressBar(subj.percent, subj.percent >= 80 ? 'green' : subj.percent >= 40 ? 'orange' : ''),
+    h('div.list__sub.mt-8', {
+      text: subj.mastered
+        ? `已掌握 ${subj.mastered} 道（辨析题 + 简答论述），继续把剩下的过一遍`
+        : '辨析题与简答论述占政治 80 分。做完后在解析页点「我已掌握这题」即可累计',
+    }),
+    h('div.mt-12', null, [
+      h('button.btn.btn--sm.btn--outline', {
+        type: 'button',
+        text: '去刷辨析题专项 ›',
+        onclick: () => go('chapter/subj-bx'),
+      }),
+    ]),
+  ]);
+
   const modeGrid = h('div.mode-grid', null, [
     modeCard('📚', '章节练习', '按知识点逐题练习，即时看解析', () => go('chapters')),
     modeCard('🎲', '随机组卷', '自选章节与难度，随机抽题', () => go('setup/practice')),
@@ -68,6 +109,7 @@ export function HomeView() {
 
   const body = h('div.page__body', null, [
     modeGrid,
+    h('div.mt-16', null, subjectiveCard),
     h('section.section', null, [
       h('div.section__head', null, [
         h('h2.section__title', { text: '章节进度' }),

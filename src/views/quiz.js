@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 答题页 / 答题卡 / 结果与解析
  *
  * 三种进入方式：
@@ -307,6 +307,44 @@ function confirmOptionAnswer(session, question) {
   rerender();
 }
 
+/* ------------------------------------------------------------------ */
+/* 参考答案要点 / 已掌握标记                                            */
+/* ------------------------------------------------------------------ */
+
+/** 把参考答案按「踩点」逐条列出；没有要点时返回 null */
+function answerPointsNode(q) {
+  const points = Array.isArray(q.points) ? q.points : [];
+  if (points.length < 2) return null;
+  return h('div.points', null, [
+    h('div.points__title', { text: `参考答案要点（${points.length} 点，踩点给分）` }),
+    h(
+      'ol.points__list',
+      null,
+      points.map((p) => h('li.points__item', { text: p }))
+    ),
+  ]);
+}
+
+/** 主观题自评：标记「已掌握」后自动移出错题本 */
+function masteryRow(q) {
+  const mastered = store.isMastered(q.id);
+  return h('div.mastery-row', null, [
+    mastered
+      ? h('span.mastery-done', { text: '✓ 已标记为掌握' })
+      : h('button.btn.btn--sm.btn--primary', {
+          type: 'button',
+          text: '👍 我已掌握这题',
+          onclick: () => {
+            store.markMastered(q.id);
+            store.removeWrong(q.id);
+            toast('已标记为掌握');
+            rerender();
+          },
+        }),
+    h('span.mastery-hint', { text: '标记后会从错题本移出，可在「我的」查看掌握进度' }),
+  ]);
+}
+
 /** 填空题输入框 */
 function fillInput(session, question) {
   const value = typeof session.answers[question.id] === 'string' ? session.answers[question.id] : '';
@@ -432,12 +470,19 @@ function renderQuiz() {
   let feedbackNode = null;
   if (revealed) {
     const ok = session.feedback[q.id];
+    const pointsNode = answerPointsNode(q);
+
     if (ok === null) {
-      // 简答题：不自动判分，展示参考答案供自评
+      // 简答题：不自动判分，展示参考答案要点供自评
       feedbackNode = h('div.feedback.feedback--pending', null, [
-        h('div.feedback__title', { text: '📝 简答题 · 待自评' }),
-        h('div.feedback__line', null, ['参考答案：', h('span', { text: q.answerText || myText || '（未提供参考答案）' })]),
-        h('div.feedback__line', null, ['解析：', h('span', { text: q.analysis })]),
+        h('div.feedback__title', { text: '📝 简答题 · 对照要点自评' }),
+        pointsNode ||
+          h('div.feedback__line', null, [
+            '参考答案：',
+            h('span', { text: q.answerText || myText || '（未提供参考答案）' }),
+          ]),
+        h('div.feedback__line', null, ['评分提示：', h('span', { text: q.analysis })]),
+        masteryRow(q),
       ]);
     } else {
       const mine = qType === 'fill' ? myText : userAnswer.join('、');
@@ -736,12 +781,25 @@ function analysisItem(d, index, session) {
         : tag(d.correct ? '答对' : '答错', d.correct ? 'easy' : 'hard'),
       tag(engine.typeLabel(q.type)),
       tag(engine.DIFFICULTIES[q.difficulty].label, engine.DIFFICULTIES[q.difficulty].color),
+      store.isMastered(q.id) ? tag('已掌握', 'easy') : null,
     ]),
     h('div.analysis-item__stem', { text: q.stem }),
+    // 有要点的主观题：逐条列出参考答案要点（手机上更好背）
+    q.points && q.points.length >= 2
+      ? h('div.points', null, [
+          h('div.points__title', { text: `参考答案要点（${q.points.length} 点，踩点给分）` }),
+          h(
+            'ol.points__list',
+            null,
+            q.points.map((p) => h('li.points__item', { text: p }))
+          ),
+        ])
+      : h('div.analysis-item__answer', null, [
+          type === 'short' ? '参考答案：' : '正确答案：',
+          h('em', { text: right }),
+        ]),
     h('div.analysis-item__answer', null, [
-      type === 'short' ? '参考答案：' : '正确答案：',
-      h('em', { text: right }),
-      ' ｜ 你的答案：',
+      '你的答案：',
       h(`em${d.correct || pending ? '' : '.mine-wrong'}`, { text: mine }),
     ]),
     h('div.analysis-item__analysis', null, [h('b', { text: '解析：' }), q.analysis]),
@@ -810,7 +868,16 @@ export function ReviewView({ id }) {
     ]),
     h('div.feedback.feedback--right.mt-12', null, [
       h('div.feedback__title', { text: qType === 'short' ? '参考答案' : '正确答案' }),
-      h('div.feedback__line', null, [h('b', { text: rightText })]),
+      q.points && q.points.length >= 2
+        ? h('div.points', null, [
+            h('div.points__title', { text: `参考答案要点（${q.points.length} 点）` }),
+            h(
+              'ol.points__list',
+              null,
+              q.points.map((p) => h('li.points__item', { text: p }))
+            ),
+          ])
+        : h('div.feedback__line', null, [h('b', { text: rightText })]),
       item
         ? h('div.feedback__line', null, [
             qType === 'short' || qType === 'fill' ? '你上次填写：' : '你上次选择了：',

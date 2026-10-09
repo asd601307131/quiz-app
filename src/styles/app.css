@@ -846,6 +846,67 @@ ol {
   color: #b3730a;
 }
 
+/* 参考答案要点（踩点给分） */
+.points {
+  margin-top: 12px;
+  background: #fff;
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius-s);
+  padding: 12px 14px;
+}
+
+.points__title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--c-primary);
+  margin-bottom: 8px;
+}
+
+.points__list {
+  margin: 0;
+  padding-left: 1.2rem;
+  list-style: decimal;
+}
+
+.points__item {
+  font-size: 0.86rem;
+  line-height: 1.75;
+  color: var(--c-text-2);
+  margin-bottom: 6px;
+}
+
+.points__item:last-child {
+  margin-bottom: 0;
+}
+
+.points__item::marker {
+  color: var(--c-primary);
+  font-weight: 600;
+}
+
+/* 「我已掌握」自评区 */
+.mastery-row {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--c-line);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.mastery-done {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--c-green);
+}
+
+.mastery-hint {
+  font-size: 0.72rem;
+  color: var(--c-text-3);
+  line-height: 1.6;
+}
+
 /* 填空 / 简答 答题区 */
 .fill-box {
   margin-top: 14px;

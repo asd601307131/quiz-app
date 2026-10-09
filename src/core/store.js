@@ -10,6 +10,7 @@ const KEYS = {
   user: `${NS}.user`,
   sessions: `${NS}.sessions`, // 答题记录（成绩历史）
   wrong: `${NS}.wrong`, // 错题本：questionId -> 记录
+  mastered: `${NS}.mastered`, // 已掌握：questionId -> { at }
   stats: `${NS}.stats`, // 累计统计
   settings: `${NS}.settings`,
 };
@@ -157,6 +158,43 @@ export function clearSessions() {
 }
 
 /* ------------------------------------------------------------------ */
+/* 已掌握标记                                                          */
+/* ------------------------------------------------------------------ */
+
+/** 返回已掌握题目 id 的集合，便于 O(1) 查询 */
+export function getMasteredIds() {
+  return Object.keys(readRaw(KEYS.mastered, {}));
+}
+
+export function isMastered(questionId) {
+  const map = readRaw(KEYS.mastered, {});
+  return Boolean(map[questionId]);
+}
+
+/** 标记为已掌握（主观题自评通过时使用） */
+export function markMastered(questionId, note = '') {
+  const map = readRaw(KEYS.mastered, {});
+  map[questionId] = { questionId, at: Date.now(), note };
+  writeRaw(KEYS.mastered, map);
+  emit('mastered', map);
+  return map[questionId];
+}
+
+export function unmarkMastered(questionId) {
+  const map = readRaw(KEYS.mastered, {});
+  if (map[questionId]) {
+    delete map[questionId];
+    writeRaw(KEYS.mastered, map);
+    emit('mastered', map);
+  }
+}
+
+export function clearMastered() {
+  writeRaw(KEYS.mastered, {});
+  emit('mastered', {});
+}
+
+/* ------------------------------------------------------------------ */
 /* 错题本                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -260,7 +298,7 @@ function bumpStats(entry) {
 }
 
 export function resetAll() {
-  [KEYS.user, KEYS.sessions, KEYS.wrong, KEYS.stats, KEYS.settings].forEach((k) => {
+  [KEYS.user, KEYS.sessions, KEYS.wrong, KEYS.mastered, KEYS.stats, KEYS.settings].forEach((k) => {
     if (canUseLS) window.localStorage.removeItem(k);
     memory.delete(k);
   });
@@ -268,6 +306,7 @@ export function resetAll() {
   emit('user', getUser());
   emit('sessions', []);
   emit('wrong', {});
+  emit('mastered', {});
   emit('stats', getStats());
 }
 

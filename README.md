@@ -1,4 +1,4 @@
-# 答题闯关 · 手机端答题应用（H5）
+﻿# 答题闯关 · 手机端答题应用（H5）
 
 一个**零依赖、纯前端**的手机答题应用，打开即用：章节练习、随机组卷、限时模拟考试、错题本、成绩记录与用户体系。
 默认数据全部存在浏览器本地（localStorage），不需要后端；需要微信登录或云端同步时，接上附带的示例后端即可。
@@ -44,7 +44,7 @@ npm run dev            # 等价于 node scripts/serve.mjs，默认 5173 端口
 | `npm run dev -- 8080` | 指定端口 |
 | `npm run dev -- 8080 --local` | 只监听回环，仅本机可访问 |
 | `npm run dev -- 8080 --mock` | 额外开启 `/api/*` 模拟接口，验证「远端数据模式」 |
-| `npm run check` | 题库 + 判分引擎自测（36 项断言，无需浏览器） |
+| `npm run check` | 题库 + 判分引擎自测（65 项断言，无需浏览器） |
 | `npm run wechat` | 启动微信登录后端示例（见第五节） |
 | `node scripts/e2e.mjs http://localhost:5173` | 用本机 Edge/Chrome 无头模式跑完整流程并截图 |
 
@@ -82,6 +82,15 @@ npm run dev            # 等价于 node scripts/serve.mjs，默认 5173 端口
 题型支持：单选、多选、判断、**填空**（多可接受答案、忽略大小写与全角标点）、
 **简答**（不自动判分，交卷后展示参考答案自评，且不拉低客观题总分）。
 
+**主观题背诵与进度追踪**
+
+- **参考答案要点自动拆解**：简答/论述/辨析的参考答案在导入时按「踩点给分」的格式
+  （`（1）…（2）…`、`①②③`、`第一，…`、`1.…`）自动拆成条目，手机上逐条背诵。
+  拆解逻辑在 `src/core/points.js`，题库里 24 道主观题已带要点。
+- **「我已掌握」自评**：主观题解析页可一键标记掌握（数据存 `quizapp.v1.mastered`），
+  标记后自动移出错题本；首页显示「主观题掌握进度」条，用于冲刺阶段量化剩余量。
+- 进度统计会把「已掌握」的题目计入对应章节进度，避免练过却不涨进度。
+
 > 换题库只需改表格：`node scripts/make-template.mjs` 生成模板 → 填好后
 > `node scripts/import-questions.mjs 你的表.csv`，详见第六节。内置题库可整体替换，不必改代码。
 
@@ -100,7 +109,7 @@ npm run dev            # 等价于 node scripts/serve.mjs，默认 5173 端口
 - 兼容：localStorage 不可用（隐私模式）时自动降级到内存存储
 - PWA：内含 `manifest.webmanifest`，可「添加到主屏幕」全屏运行
 
-题库规模：**5 章节 / 60 道题**，含单选题、多选题、判断题，三种难度，每题带解析。
+题库规模：**28 章节 / 213 题**（详见上文表格），每题带解析，主观题带参考答案要点。
 
 ---
 
@@ -119,6 +128,7 @@ quiz-app/
 │  │  ├─ engine.js                判分与组卷引擎（纯函数，可 Node 端测试）
 │  │  ├─ store.js                 localStorage 封装 + 事件总线（成绩/错题/统计/设置）
 │  │  ├─ state.js                 当前答题会话（跨页面共享）
+│  │  ├─ points.js                参考答案要点拆解（踩点给分格式识别）
 │  │  └─ utils.js                 转义、时间格式化、洗牌等工具
 │  ├─ ui/ui.js                    轻量 UI 基元：h() 建 DOM、顶部栏、标签栏、弹窗、Toast
 │  ├─ services/
@@ -129,13 +139,26 @@ quiz-app/
 │     ├─ quiz.js                  答题页、答题卡、结果页、错题回顾
 │     └─ login.js                 登录页
 ├─ server/wechat-login-server.mjs 微信网页授权后端示例（零依赖）
-├─ scripts/
+├─ scripts/                       题库流水线与测试
 │  ├─ serve.mjs                   本地静态服务器（含可选 API Mock）
-│  ├─ check.mjs                   题库 + 引擎自测
-│  └─ e2e.mjs                     无头浏览器端到端验证 + 截图
+│  ├─ check.mjs                   题库 + 引擎自测（65 项）
+│  ├─ e2e.mjs                     通用流程端到端验证（27 项）
+│  ├─ e2e-exam.mjs                成考题库端到端验证（20 项）
+│  ├─ make-template.mjs           生成题库导入模板
+│  ├─ import-questions.mjs        CSV → questions.js（含校验）
+│  ├─ parse-politics.mjs          教材真题文本 → CSV
+│  └─ parse-real-exams.mjs        陕西历年真题 → CSV
+├─ tools/                         辅助脚本
+│  ├─ extract-pdf.py              PDF → 文本（需 pypdf）
+│  ├─ merge-chapters.mjs          合并章节定义
+│  ├─ sample-bank.mjs             题库质检抽样
+│  ├─ fix-csv-columns.mjs         修复 CSV 列错位
+│  ├─ preflight-pages.ps1         部署前自检
+│  ├─ check-github-net.ps1        GitHub 连通性体检
+│  └─ start-tunnel.ps1            一键起临时隧道
 ├─ .github/workflows/deploy-pages.yml   GitHub Pages 自动部署（含发布前自测）
 ├─ .gitignore / .gitattributes    忽略临时文件、统一换行符
-└─ screenshots/                   e2e 产出的 17 张界面截图
+└─ screenshots/                   e2e 产出的界面截图
 ```
 
 > 手机用移动数据访问（不依赖同一 WiFi）→ 见 [第八节：部署](#八部署)。
@@ -255,7 +278,7 @@ WECHAT_APPID=wx... WECHAT_SECRET=... WEB_ORIGIN=http://localhost:5173 npm run we
 ## 七、测试与验证
 
 ```bash
-npm run check      # 题库结构与判分引擎：36 项断言
+npm run check      # 题库结构与判分引擎：65 项断言
 ```
 
 覆盖：题目 id 唯一性、字段完整性、答案与题型匹配（单选 1 项、多选 ≥2 项、判断 2 选 1）、
@@ -271,13 +294,15 @@ node scripts/e2e.mjs http://localhost:5173
 
 用本机 Edge/Chrome 无头模式、390×844 手机视口真实渲染，走完 8 组场景（首页 → 章节练习即时反馈 →
 自动下一题开关 → 答题卡 → 交卷判分与逐题解析 → 错题本/记录 → 限时考试与交卷确认 → 我的/登录），
-**27 项断言全部通过**，并把每一步截图到 `screenshots/`（17 张）。
+**27 项断言全部通过**，并把每一步截图到 screenshots/。
+ode scripts/e2e-exam.mjs 另有 20 项断言，专门验证成考题库（真题题干/选项、辨析题两步作答、论述题要点与「我已掌握」标记）。
 
 最近一次实测结果：
 
 ```
-题库 + 引擎自测：36 通过, 0 失败
-端到端验证：    27 通过, 0 失败（页面无 JS 报错）
+题库 + 引擎自测：65 通过, 0 失败
+通用流程 e2e：  27 通过, 0 失败
+成考题库 e2e：  20 通过, 0 失败（页面无 JS 报错）
 ```
 
 ---

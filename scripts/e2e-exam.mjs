@@ -233,7 +233,34 @@ async function main() {
     await evaluate(`document.querySelector('.footer-bar .btn--primary').click()`);
     await sleep(700);
     const fb = await evaluate(`document.querySelector('.feedback') ? document.querySelector('.feedback').innerText.slice(0, 120) : null`);
-    check('论述题显示参考答案待自评', Boolean(fb && fb.includes('参考答案')), fb || '无反馈');
+    check('论述题显示参考答案', Boolean(fb && fb.includes('参考答案')), fb || '无反馈');
+
+    // 参考答案要点 + 「我已掌握」自评
+    const essayUi = await evaluate(`({
+      points: document.querySelectorAll('.points__item').length,
+      pointsTitle: document.querySelector('.points__title') ? document.querySelector('.points__title').innerText : null,
+      masteryBtn: Boolean(document.querySelector('.mastery-done')) || Boolean([...document.querySelectorAll('.mastery-row .btn')].find((b) => b.innerText.includes('掌握'))),
+    })`);
+    check('参考答案按要点逐条展示', essayUi.points >= 2, `要点数=${essayUi.points} ${essayUi.pointsTitle || ''}`);
+    check('提供「我已掌握」自评入口', essayUi.masteryBtn);
+    await shot('41-essay-points');
+
+    // 点击「我已掌握」并确认进度被记录
+    const beforeMastered = await evaluate(`(async () => {
+      const s = await import('./src/core/store.js');
+      return s.getMasteredIds().length;
+    })()`);
+    await evaluate(`(() => {
+      const b = [...document.querySelectorAll('.mastery-row .btn')].find((x) => x.innerText.includes('掌握'));
+      if (b) b.click();
+    })()`);
+    await sleep(600);
+    const afterMastered = await evaluate(`(async () => {
+      const s = await import('./src/core/store.js');
+      return s.getMasteredIds().length;
+    })()`);
+    check('点击后掌握进度 +1', afterMastered === beforeMastered + 1, `${beforeMastered} -> ${afterMastered}`);
+    await shot('42-mastery-marked');
     await shot('36-essay-feedback');
   }
 
