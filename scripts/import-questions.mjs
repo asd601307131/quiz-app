@@ -383,14 +383,16 @@ rows.forEach((row, index) => {
     q.type = 'fill';
     q.answer = list;
   } else {
+    // 主观题：简答 / 论述分开保留，两者的分值与作答要求不同
+    // （简答 10 分、论述 20 分；论述要「原理 + 方法论 + 联系实际 + 总结」）
     if (!answerText && !answerRaw) {
-      errors.push(`第 ${lineNo} 行: 简答题需要填写 answerText（参考答案）`);
+      errors.push(`第 ${lineNo} 行: 主观题需要填写 answerText（参考答案）`);
       return;
     }
-    q.type = 'short';
+    q.type = type === 'essay' ? 'essay' : 'short';
     q.answerText = answerText || answerRaw;
     if (!analysis) {
-      warnings.push(`第 ${lineNo} 行: 简答题建议填写解析（评分要点）`);
+      warnings.push(`第 ${lineNo} 行: 主观题建议填写解析（评分要点）`);
     }
   }
 

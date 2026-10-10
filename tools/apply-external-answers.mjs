@@ -134,7 +134,8 @@ for (const r of src.rows) {
 
   // 第二道关卡：必须能用**答案文字**在卷面选项里定位，否则不采信
   const letter = String(best.answer).trim().toUpperCase();
-  const extAnsText = best[`opt${letter}`] || '';
+  // 答案文字：优先取 ans_text 列；没有就从 optA..optD 里按字母找
+  const extAnsText = (best.ans_text || '').trim() || best[`opt${letter}`] || '';
   if (!extAnsText) {
     report.push(`跳过  ${r.id}  外部答案表缺少答案文字，无法校验，不采信`);
     continue;

@@ -19,7 +19,8 @@ function check(name, condition, detail = '') {
 }
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-const TYPES = ['single', 'multiple', 'judge', 'fill', 'short'];
+// essay（论述）与 short（简答）都是主观题，分值与作答要求不同，必须分开保留
+const TYPES = ['single', 'multiple', 'judge', 'fill', 'short', 'essay'];
 const CHOICE_TYPES = ['single', 'multiple', 'judge'];
 const DIFFS = ['easy', 'medium', 'hard'];
 
@@ -97,8 +98,8 @@ for (const q of QUESTIONS) {
     continue;
   }
 
-  if (q.type === 'short') {
-    // 简答题不自动判分，answer 可省略
+  if (q.type === 'short' || q.type === 'essay') {
+    // 简答 / 论述不自动判分，answer 可省略
     continue;
   }
 

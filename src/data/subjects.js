@@ -41,7 +41,14 @@ export const SUBJECTS = [
       {
         name: '陕西历年真题',
         desc: '2023、2024 年真题，按题型分开练',
-        chapters: ['real-2024-choice', 'real-2024-short', 'real-2024-essay', 'real-2023-choice', 'real-2023-short', 'real-2023-essay'],
+        chapters: [
+          'real-2024-choice',
+          'real-2024-short',
+          'real-2024-essay',
+          'real-2023-choice',
+          'real-2023-short',
+          'real-2023-essay',
+        ],
       },
     ],
   },
