@@ -154,7 +154,8 @@ for (const file of files) {
     const isChoice = /单选|多选/.test(type);
     const isJudge = /判断/.test(type);
     const isFill = /填空/.test(type);
-    const isShort = /简答|问答/.test(type);
+    // 论述也是主观题，必须一并识别，否则会误报「题型无法识别」
+    const isShort = /简答|问答|论述/.test(type);
 
     // 必填字段
     if (!g('id')) addProblem(file, id, '缺少 id');

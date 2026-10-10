@@ -143,7 +143,9 @@ const TYPE_ALIASES = {
   多选: 'multiple', 多选题: 'multiple', multiple: 'multiple', checkbox: 'multiple', 2: 'multiple', 二: 'multiple',
   判断: 'judge', 判断题: 'judge', judge: 'judge', tf: 'judge', truefalse: 'judge', 3: 'judge',
   填空: 'fill', 填空题: 'fill', fill: 'fill', blank: 'fill', 4: 'fill',
-  简答: 'short', 简答题: 'short', short: 'short', essay: 'short', 问答: 'short', 5: 'short',
+  简答: 'short', 简答题: 'short', short: 'short', 问答: 'short', 5: 'short',
+  // 论述是独立题型（20 分大题），不能并进简答
+  论述: 'essay', 论述题: 'essay', essay: 'essay', 6: 'essay',
 };
 
 const DIFF_ALIASES = {
@@ -325,12 +327,16 @@ rows.forEach((row, index) => {
 
   const answerRaw = pick(row, 'answer', '答案', '正确答案');
   const answerText = pick(row, 'answerText', '参考答案', '简答答案');
+  // 考卷模块（马哲 / 毛泽东思想 / 邓小平理论等 / 习近平新时代 / 时政）。
+  // 真卷选择题模块顺序几乎固定，有该字段时组卷会据此排序。
+  const module = pick(row, 'module', '模块', '考卷模块');
   const q = {
     id,
     chapterId,
     difficulty,
     type,
     stem,
+    ...(module ? { module } : {}),
     analysis: analysis || '（暂无解析）',
     tags: parseTags(pick(row, 'tags', '标签')),
   };
@@ -512,6 +518,9 @@ function renderQuestion(q, indent = '  ') {
   lines.push(`${indent}  chapterId: ${jsString(q.chapterId)},`);
   lines.push(`${indent}  difficulty: ${jsString(q.difficulty)},`);
   lines.push(`${indent}  type: ${jsString(q.type)},`);
+  // 考卷模块（马哲 / 毛泽东思想 / 邓小平理论等 / 习近平新时代 / 时政）：
+  // 真卷选择题的模块顺序几乎固定，组卷时据此排序，有则写入
+  if (q.module) lines.push(`${indent}  module: ${jsString(q.module)},`);
   lines.push(`${indent}  stem: ${jsString(q.stem)},`);
   if (q.options) lines.push(`${indent}  options: ${jsArray(q.options)},`);
   if (q.answer) lines.push(`${indent}  answer: ${jsArray(q.answer)},`);

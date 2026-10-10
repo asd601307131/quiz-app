@@ -174,8 +174,15 @@ async function main() {
   /* ---------------- 3. 时长估算 ---------------- */
   console.log('\n[3] 按题型数量估算整套时长');
   await goto('#/setup/exam');
+  // 页面上有多个 .form-field__hint（板块说明、估时提示），
+  // 必须取「含时长输入框的那个字段」里的提示，否则会读到板块说明
+  const DURATION_HINT = `(() => {
+    const field = [...document.querySelectorAll('.form-field')].find((f) => f.querySelector('.duration-row'));
+    const hint = field ? field.querySelector('.form-field__hint') : null;
+    return hint ? hint.innerText : '';
+  })()`;
   const setup = await evaluate(`({
-    hint: document.querySelector('.form-field__hint') ? document.querySelector('.form-field__hint').innerText : '',
+    hint: ${DURATION_HINT},
     hasApplyBtn: [...document.querySelectorAll('.btn')].some((b) => b.innerText.includes('用建议时长')),
     duration: document.querySelector('.duration-row input') ? document.querySelector('.duration-row input').value : null,
   })`);
@@ -190,14 +197,17 @@ async function main() {
   await sleep(700);
   const applied = await evaluate(`({
     duration: document.querySelector('.duration-row input').value,
-    hint: document.querySelector('.form-field__hint').innerText,
+    hint: ${DURATION_HINT},
   })`);
   check('采用后时长被填入建议值', Number(applied.duration) > 0 && applied.hint.includes('已采用'),
     `${applied.duration} 分钟 · ${applied.hint.slice(0, 40)}`);
 
   // 章节练习页也应显示预计用时
   await goto('#/setup/practice');
-  const practiceSetup = await evaluate(`document.querySelector('.form-field__hint') ? document.querySelector('.form-field__hint').innerText : ''`);
+  const practiceSetup = await evaluate(`(() => {
+    const hints = [...document.querySelectorAll('.form-field__hint')].map((x) => x.innerText);
+    return hints.find((t) => /估算约需/.test(t)) || hints.join(' | ');
+  })()`);
   check('练习组卷页显示预计用时', /估算约需\s*\d+\s*分钟/.test(practiceSetup), practiceSetup);
   await shot('82-duration-estimate');
 
@@ -208,8 +218,65 @@ async function main() {
   check('答题页显示本套估算用时', /按题型估算约需\s*\d+\s*分钟/.test(quizMeta), quizMeta);
 
   /* ---------------- 5. 考试模式限时与交卷 ---------------- */
-  console.log('\n[4] 考试模式：倒计时与到点自动交卷');
-  await goto('#/quiz/exam?n=3&t=1');
+  console.log('\n[4] 组卷只抽同一板块的题（政治与英语不混卷）');
+  await goto('#/setup/exam');
+  const picker = await evaluate(`({
+    subjects: [...document.querySelectorAll('.form-field')][0]
+      ? [...document.querySelectorAll('.form-field')][0].querySelectorAll('button').length : 0,
+    labels: [...document.querySelectorAll('.form-field')][0]
+      ? [...document.querySelectorAll('.form-field')][0].innerText : '',
+    chapters: [...document.querySelectorAll('.form-field')][1]
+      ? [...document.querySelectorAll('.form-field')][1].querySelectorAll('button').length : 0,
+    chapterNames: [...document.querySelectorAll('.form-field')][1]
+      ? [...document.querySelectorAll('.form-field')][1].innerText : '',
+  })`);
+  check('组卷页可选择板块', picker.subjects >= 2, `按钮数=${picker.subjects} ${picker.labels.replace(/\n/g, ' ')}`);
+  check('默认板块为政治且章节只列政治章节',
+    picker.chapterNames.includes('马哲') && !picker.chapterNames.includes('英语'),
+    picker.chapterNames.replace(/\n/g, ' ').slice(0, 60));
+
+  // 切到英语，章节列表应换成英语章节
+  await evaluate(`(() => {
+    const btns = [...document.querySelectorAll('.form-field')][0].querySelectorAll('button');
+    const en = [...btns].find((b) => b.innerText.includes('英语'));
+    if (en) en.click();
+  })()`);
+  await sleep(600);
+  const afterSwitch = await evaluate(`({
+    chapterNames: [...document.querySelectorAll('.form-field')][1].innerText,
+    poolText: document.querySelector('.tag--primary') ? document.querySelector('.tag--primary').innerText : '',
+  })`);
+  check('切到英语后章节列表只剩英语章节',
+    afterSwitch.chapterNames.includes('英语') && !afterSwitch.chapterNames.includes('马哲'),
+    afterSwitch.chapterNames.replace(/\n/g, ' ').slice(0, 60));
+  check('可抽题数量随之变为英语题量',
+    /可抽题\s*\d+\s*道/.test(afterSwitch.poolText) && !/可抽题\s*5\d\d\s*道/.test(afterSwitch.poolText),
+    afterSwitch.poolText);
+  await shot('85-setup-subject');
+
+  // 实际开考后核对：卷子里不能同时出现政治和英语的章节
+  await evaluate(`(() => {
+    const b = [...document.querySelectorAll('.footer-bar .btn')].find((x) => x.innerText.includes('开始考试'));
+    if (b) b.click();
+  })()`);
+  await sleep(1600);
+  await evaluate(`(async () => {
+    const s = await import('./src/core/state.js');
+    window.__sess = s.getSession();
+  })()`);
+  const sessionCheck = await evaluate(`(() => {
+    const s = window.__sess;
+    if (!s) return { error: 'no session' };
+    const chapters = [...new Set(s.questions.map((q) => q.chapterId))];
+    return { count: s.questions.length, chapters, hasEn: chapters.some((c) => c.startsWith('en-')), hasP: chapters.some((c) => c.startsWith('p')) };
+  })()`);
+  check('英语卷子里不含政治题', sessionCheck.hasEn === true && sessionCheck.hasP === false,
+    `章节=${(sessionCheck.chapters || []).join(',')}`);
+  await shot('86-exam-english-only');
+
+  /* ---------------- 6. 考试模式限时与交卷 ---------------- */
+  console.log('\n[5] 考试模式：倒计时与到点自动交卷');
+  await goto('#/quiz/exam?n=3&t=1&s=politics');
   await sleep(1500);
   // 稍等，避免刚进入时仍渲染着上一页的底部按钮
   await sleep(600);
@@ -250,7 +317,7 @@ async function main() {
   check('结果页显示得分', /得分|分/.test(auto.text), auto.text.replace(/\n/g, ' ').slice(0, 40));
   await shot('83-exam-autosubmit');
 
-  console.log('\n[5] 控制台错误');
+  console.log('\n[6] 控制台错误');
   const real = errors.filter((e) => !/favicon|manifest/i.test(e));
   check('页面无 JS 报错', real.length === 0, real.slice(0, 2).join(' | '));
 

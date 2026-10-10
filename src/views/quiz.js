@@ -14,6 +14,7 @@ import * as store from '../core/store.js';
 import * as state from '../core/state.js';
 import * as engine from '../core/engine.js';
 import { QUESTIONS, getQuestion, getChapter } from '../data/questions.js';
+import { SUBJECTS, getSubject, subjectOfChapter, chapterIdsOfSubject } from '../data/subjects.js';
 import { fmtClock, fmtDuration, fmtTime, percent, shuffle } from '../core/utils.js';
 import { go, back } from '../app.js';
 
@@ -47,6 +48,30 @@ function makeOptionOrder(question, shuffleOptions) {
   return shuffleOptions && question.type === 'single' ? shuffle(letters) : letters;
 }
 
+/** 科目显示名 */
+function subjectTitle(subjectId) {
+  const s = getSubject(subjectId);
+  return s ? s.name : '';
+}
+
+/**
+ * 组卷题池：**限定在单个科目内**。
+ * 历史问题：不传科目时 buildPaper 会从全库抽题，导致一份卷子里既有政治又有英语。
+ * 兼容处理——若 URL 未带科目但带了对某些章节的选择，则按这些章节反推科目。
+ */
+function poolOfSubject(subjectId, chapterIds) {
+  let subject = subjectId && getSubject(subjectId) ? getSubject(subjectId) : null;
+
+  if (!subject && chapterIds && chapterIds.length) {
+    const owner = subjectOfChapter(chapterIds[0]);
+    if (owner) subject = getSubject(owner);
+  }
+  if (!subject) subject = SUBJECTS[0]; // 默认政治
+
+  const allowed = new Set(chapterIdsOfSubject(subject.id));
+  return QUESTIONS.filter((q) => allowed.has(q.chapterId));
+}
+
 function buildQuestions(route, query) {
   const parseList = (v) => (v ? v.split(',').filter(Boolean) : null);
 
@@ -63,29 +88,34 @@ function buildQuestions(route, query) {
   if (route === 'quiz/random') {
     const chapterIds = parseList(query.c);
     const difficulties = parseList(query.d);
-    const list = engine.buildPaper(QUESTIONS, {
+    const pool = poolOfSubject(query.s, chapterIds);
+    // 练习卷只出客观题：简答、论述、辨析理由不参与组卷
+    const list = engine.buildPaper(pool, {
       count: Number(query.n) || 10,
       chapterIds,
       difficulties,
+      onlyObjective: true,
     });
-    return { list, mode: 'practice', title: '随机组卷练习', chapterIds, difficulties };
+    return { list, mode: 'practice', title: `${subjectTitle(query.s)}随机练习`, chapterIds, difficulties };
   }
 
   if (route === 'quiz/exam') {
     const chapterIds = parseList(query.c);
     const difficulties = parseList(query.d);
-    const list = engine.buildPaper(QUESTIONS, {
-      count: Number(query.n) || 10,
-      chapterIds,
-      difficulties,
-    });
+    let pool = poolOfSubject(query.s, chapterIds);
+    if (difficulties && difficulties.length) {
+      pool = pool.filter((q) => difficulties.includes(q.difficulty));
+    }
+    // 考试卷按真卷模块结构组卷：马哲 → 毛泽东思想 → 邓小平理论等 → 习近平新时代 → 时政
+    const list = engine.buildStructuredPaper(pool, Number(query.n) || 35);
     return {
       list,
       mode: 'exam',
-      title: '模拟考试',
+      title: `${subjectTitle(query.s)}模拟考试`,
       chapterIds,
       difficulties,
       durationSec: (Number(query.t) || 10) * 60,
+      structured: true,
     };
   }
 

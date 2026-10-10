@@ -107,7 +107,10 @@ function resolveView({ route, base, segments, query }) {
     case 'chapter':
       return ChapterView({ id: segments[1] });
     case 'setup':
-      return SetupView({ mode: segments[1] === 'exam' ? 'exam' : 'practice' });
+      return SetupView({
+        mode: segments[1] === 'exam' ? 'exam' : 'practice',
+        subject: query.subject || null,
+      });
     case 'quiz': {
       const kind = segments[1];
       if (!['chapter', 'random', 'exam', 'wrong'].includes(kind)) return NotFoundView();

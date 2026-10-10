@@ -6,7 +6,7 @@ import { h, header, tabbar, tag, progressBar, emptyState, toast, confirmDialog }
 import * as store from '../core/store.js';
 import * as auth from '../services/auth.js';
 import { CHAPTERS, QUESTIONS, chapterStats, getQuestion } from '../data/questions.js';
-import { SUBJECTS, chapterIdsOfSubject } from '../data/subjects.js';
+import { SUBJECTS, getSubject, chapterIdsOfSubject } from '../data/subjects.js';
 import * as engine from '../core/engine.js';
 import { fmtTime, fmtDuration, percent } from '../core/utils.js';
 import { go } from '../app.js';
@@ -100,7 +100,7 @@ export function HomeView() {
   const modeGrid = h('div.mode-grid', null, [
     modeCard('📚', '题库分类', '政治 / 英语两大板块，按考点逐章刷', () => go('subjects')),
     modeCard('🎯', '答题技巧', '分题型作答法、作文句型、考场规范', () => go('strategy')),
-    modeCard('🎲', '随机组卷', '自选板块与难度，随机抽题', () => go('setup/practice')),
+    modeCard('🎲', '随机组卷', '按板块抽题，自选章节与难度', () => go('setup/practice')),
     modeCard('📝', '模拟考试', `限时 ${store.getSettings().examDurationMin} 分钟，交卷判分`, () =>
       go('setup/exam')
     ),
@@ -292,27 +292,76 @@ export function ChapterView({ id }) {
 /* ------------------------------------------------------------------ */
 
 const setupState = {
+  subject: 'politics', // 科目：政治 / 英语。组卷只在同一科目内抽题
   chapters: [],
   difficulties: [],
   count: 10,
   durationMin: 10,
 };
 
-export function SetupView({ mode = 'practice' } = {}) {
+export function SetupView({ mode = 'practice', subject = null } = {}) {
   const isExam = mode === 'exam';
-  const maxCount = 60;
+  const maxCount = 200;
   setupState.count = isExam ? store.getSettings().examQuestionCount : 10;
   setupState.durationMin = store.getSettings().examDurationMin;
 
-  const chapterPicker = h(
+  // 进入组卷页时重置：科目取传入值，章节清空（章节列表随科目变化）
+  setupState.subject = subject && getSubject(subject) ? subject : setupState.subject;
+  if (!getSubject(setupState.subject)) setupState.subject = SUBJECTS[0].id;
+  setupState.chapters = [];
+
+  /** 当前科目下的章节（只列题库里确实有题的） */
+  function subjectChapters() {
+    return chapterIdsOfSubject(setupState.subject)
+      .map((id) => CHAPTERS.find((c) => c.id === id))
+      .filter((c) => c && chapterStats(c.id).total > 0);
+  }
+
+  const subjectPicker = h(
     'div.tag-row',
     null,
-    CHAPTERS.map((c) =>
+    SUBJECTS.map((s) =>
       h(
-        `button.btn.btn--sm${setupState.chapters.includes(c.id) ? '.btn--primary' : '.btn--ghost'}`,
+        `button.btn.btn--sm${setupState.subject === s.id ? '.btn--primary' : '.btn--ghost'}`,
         {
           type: 'button',
-          text: c.name,
+          text: `${s.icon} ${s.name}`,
+          onclick: (e) => {
+            if (setupState.subject === s.id) return;
+            setupState.subject = s.id;
+            setupState.chapters = [];
+            e.currentTarget.parentElement
+              .querySelectorAll('button')
+              .forEach((b) => { b.className = 'btn btn--sm btn--ghost'; });
+            e.currentTarget.className = 'btn btn--sm btn--primary';
+            // 章节列表与可用题量都要跟着换
+            renderChapterPicker();
+            updateSummary();
+          },
+        }
+      )
+    )
+  );
+
+  const chapterPicker = h('div.tag-row', null, []);
+
+  /** 章节选择器：内容随当前科目重建 */
+  function renderChapterPicker() {
+    chapterPicker.textContent = '';
+    const list = subjectChapters();
+    if (!list.length) {
+      chapterPicker.appendChild(
+        h('span.form-field__hint', { text: '该板块下暂无可用章节' })
+      );
+      return;
+    }
+    list.forEach((c) => {
+      const st = chapterStats(c.id);
+      const on = setupState.chapters.includes(c.id);
+      chapterPicker.appendChild(
+        h(`button.btn.btn--sm${on ? '.btn--primary' : '.btn--ghost'}`, {
+          type: 'button',
+          text: `${c.name}（${st.total}）`,
           onclick: (e) => {
             const i = setupState.chapters.indexOf(c.id);
             if (i >= 0) setupState.chapters.splice(i, 1);
@@ -322,10 +371,10 @@ export function SetupView({ mode = 'practice' } = {}) {
             }`;
             updateSummary();
           },
-        }
-      )
-    )
-  );
+        })
+      );
+    });
+  }
 
   const diffPicker = h(
     'div.tag-row',
@@ -413,7 +462,12 @@ export function SetupView({ mode = 'practice' } = {}) {
   const body = h('div.page__body', null, [
     h('div.card', null, [
       h('div.form-field', null, [
-        h('label.form-field__label', { text: '选择章节（不选 = 全部章节）' }),
+        h('label.form-field__label', { text: '选择板块' }),
+        subjectPicker,
+        h('div.form-field__hint', { text: '只在本板块内抽题，政治与英语不会混在一份卷子里' }),
+      ]),
+      h('div.form-field', null, [
+        h('label.form-field__label', { text: '选择章节（不选 = 本板块全部章节）' }),
         chapterPicker,
       ]),
       h('div.form-field', null, [
@@ -453,6 +507,7 @@ export function SetupView({ mode = 'practice' } = {}) {
           : {}
       );
       const params = new URLSearchParams();
+      params.set('s', setupState.subject);
       if (setupState.chapters.length) params.set('c', setupState.chapters.join(','));
       if (setupState.difficulties.length) params.set('d', setupState.difficulties.join(','));
       params.set('n', String(setupState.count));
@@ -461,6 +516,9 @@ export function SetupView({ mode = 'practice' } = {}) {
     },
   });
 
+  // 章节列表随科目初始化
+  renderChapterPicker();
+
   return h('div.page', null, [
     header({ title: isExam ? '模拟考试设置' : '随机组卷', onBack: () => go('home') }),
     body,
@@ -468,9 +526,11 @@ export function SetupView({ mode = 'practice' } = {}) {
   ]);
 }
 
-// 在 SetupView 内引用题库
+// 在 SetupView 内引用题库：只抽**当前科目**下的题，避免政治与英语混卷
 function QUESTIONS_FILTERED() {
+  const allowed = new Set(chapterIdsOfSubject(setupState.subject));
   return QUESTIONS.filter((q) => {
+    if (!allowed.has(q.chapterId)) return false;
     if (setupState.chapters.length && !setupState.chapters.includes(q.chapterId)) return false;
     if (setupState.difficulties.length && !setupState.difficulties.includes(q.difficulty)) return false;
     return true;
