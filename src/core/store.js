@@ -319,8 +319,9 @@ const DEFAULT_SETTINGS = {
   shuffleOptions: false, // 考试模式是否打乱选项
   // 默认关闭自动下一题：作答后要能看清正确答案与解析，跳太快等于白做
   autoNext: false,
-  examQuestionCount: 10,
-  examDurationMin: 30,
+  // 真卷是 35 道选择题、全卷 150 分钟；模拟考试默认按真卷规模出题
+  examQuestionCount: 35,
+  examDurationMin: 135,
 };
 
 export function getSettings() {
