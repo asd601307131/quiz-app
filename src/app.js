@@ -120,9 +120,9 @@ function resolveView({ route, base, segments, query }) {
     case 'sheet':
       return SheetView();
     case 'result':
-      return ResultView({ id: segments[1] });
+      return ResultView({ id: segments[1], query });
     case 'review':
-      return ReviewView({ id: segments[1] });
+      return ReviewView({ id: segments[1], query });
     case 'wrong':
       return WrongView();
     case 'history':

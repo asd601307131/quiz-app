@@ -564,18 +564,26 @@ export function WrongView({ auto = false } = {}) {
           'div.list',
           null,
           questions.map(({ item, question }) =>
-            h('button.list__item', { type: 'button', onclick: () => go(`review/${question.id}`) }, [
-              h('div.list__main', null, [
-                h('div.list__title', { text: question.stem }),
-                h('div.tag-row.mt-8', null, [
-                  tag(engine.typeLabel(question.type)),
-                  tag(engine.DIFFICULTIES[question.difficulty].label, engine.DIFFICULTIES[question.difficulty].color),
-                  tag(`错 ${item.wrongCount} 次`, 'hard'),
-                  tag(fmtTime(item.lastWrongAt)),
+            h(
+              'button.list__item',
+              {
+                type: 'button',
+                // 直接进入该题解析页，并带上来源，返回时能回到错题本
+                onclick: () => go(`review/${question.id}?from=wrong`),
+              },
+              [
+                h('div.list__main', null, [
+                  h('div.list__title', { text: question.stem }),
+                  h('div.tag-row.mt-8', null, [
+                    tag(engine.typeLabel(question.type)),
+                    tag(engine.DIFFICULTIES[question.difficulty].label, engine.DIFFICULTIES[question.difficulty].color),
+                    tag(`错 ${item.wrongCount} 次`, 'hard'),
+                    tag(fmtTime(item.lastWrongAt)),
+                  ]),
                 ]),
-              ]),
-              h('span.list__arrow', { text: '›' }),
-            ])
+                h('span.list__arrow', { text: '›' }),
+              ]
+            )
           )
         )
       : emptyState('🎉', '错题本是空的，继续保持！\n答错的题会自动收录到这里。'),

@@ -935,6 +935,84 @@ ol {
   opacity: 0.92;
 }
 
+/* --------------------------------------------------------------------------
+   解析态的选项：只改**文字颜色**，不加背景/边框变色
+   —— 正确答案绿色、选错红色、未选且非答案保持默认
+   -------------------------------------------------------------------------- */
+
+.correct-option-text {
+  color: #2e7d32;
+  font-weight: 600;
+}
+
+.wrong-option-text {
+  color: #d32f2f;
+  font-weight: 600;
+}
+
+.normal-option-text {
+  color: inherit;
+}
+
+.options--analysis {
+  margin-top: 12px;
+  gap: 8px;
+}
+
+/* 解析态选项本体保持中性，只让文字与标签区分 */
+.options--analysis .option {
+  background: transparent;
+  border-color: var(--c-line);
+  cursor: default;
+  padding: 8px 10px;
+}
+
+.options--analysis .option__key {
+  background: transparent;
+  border-color: var(--c-line);
+  color: var(--c-text-2);
+}
+
+.options--analysis .option.is-right .option__key {
+  border-color: #2e7d32;
+  color: #2e7d32;
+}
+
+.options--analysis .option.is-wrong .option__key {
+  border-color: #d32f2f;
+  color: #d32f2f;
+}
+
+.option__labels {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 揭晓后也不给选项加边框/底色，颜色规则只在文字与标签上体现 */
+
+/* 深色模式下把绿/红调亮，保证对比度 */
+@media (prefers-color-scheme: dark) {
+  .correct-option-text {
+    color: #6ee7a0;
+  }
+
+  .wrong-option-text {
+    color: #ff8b8f;
+  }
+
+  .options--analysis .option.is-right .option__key {
+    border-color: #6ee7a0;
+    color: #6ee7a0;
+  }
+
+  .options--analysis .option.is-wrong .option__key {
+    border-color: #ff8b8f;
+    color: #ff8b8f;
+  }
+}
+
 .feedback {
   margin-top: 14px;
   border-radius: var(--radius-m);

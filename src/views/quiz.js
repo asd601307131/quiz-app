@@ -152,12 +152,18 @@ export function QuizView({ route, query }) {
       questions: built.list,
       durationSec: built.durationSec || 0,
     });
+    // 记住来路：'sheet' 表示从答题卡点题号进来，返回时要回答题卡
+    session.from = query.from || null;
 
     const settings = store.getSettings();
     session.optionOrder = {};
     session.flags = {};
     session.revealed = {}; // 练习模式：已揭晓解析的题目
     session.feedback = {}; // 练习模式：题目 -> 是否正确
+    // 记录本题集的入口路径与交卷后的结果页路径，供答题卡跳转/返回使用
+    session.route = route;
+    session.quizPath = route.replace(/^quiz\//, 'quiz/') + (query.id ? `/${query.id}` : '');
+    session.resultPath = `result/${session.id}`;
     built.list.forEach((q) => {
       session.optionOrder[q.id] = makeOptionOrder(
         q,
@@ -168,6 +174,7 @@ export function QuizView({ route, query }) {
     active = {
       route,
       token: query.token || String(Date.now()),
+      from: query.from || null, // 'sheet' 表示从答题卡点题号进来的
       session,
       timer: null,
       cleanup: null,
@@ -193,6 +200,11 @@ export function QuizView({ route, query }) {
     active.cleanup = () => {
       if (active && active.timer) clearInterval(active.timer);
     };
+  }
+
+  // 复用已有会话时也要同步来路标记（保存后再进入会带上新的 query.from）
+  if (active) {
+    active.from = query.from || (state.getSession() && state.getSession().from) || null;
   }
 
   return renderQuiz();
@@ -231,15 +243,25 @@ async function confirmSubmit() {
 
 function exitQuiz() {
   const session = state.getSession();
-  if (!session || session.submitted) {
+  // 从答题卡点题号进来的，返回时应回到答题卡（而不是首页）
+  const backTarget = active && active.from === 'sheet' ? 'sheet' : 'home';
+  const leave = () => {
     destroyActive();
-    go('home');
+    go(backTarget);
+  };
+
+  if (!session || session.submitted) {
+    leave();
     return;
   }
   const answered = engine.answeredCount(session);
   if (!answered) {
-    destroyActive();
-    go('home');
+    leave();
+    return;
+  }
+  // 从答题卡返回时不提示放弃作答（并未离开本套题，只是回总览）
+  if (backTarget === 'sheet') {
+    leave();
     return;
   }
   confirmDialog({
@@ -247,10 +269,7 @@ function exitQuiz() {
     text: '退出后本次作答不会保存，确定退出？',
     okText: '退出',
   }).then((ok) => {
-    if (ok) {
-      destroyActive();
-      go('home');
-    }
+    if (ok) leave();
   });
 }
 
@@ -299,8 +318,7 @@ function selectOption(session, question, letter) {
 
   rerender();
 
-  // 关掉自动跳转时给一个轻提示，提示用户手动进入下一题
-  if (!isLast) toast(correct ? '回答正确' : '回答错误，请看解析', 1300);
+  // 关闭自动跳转时不再弹 toast：解析区已经清晰标出对错，弹窗会遮住选项
 }
 
 /** 填空题/简答题：输入变化先存进会话（不重渲染，避免输入框失焦） */
@@ -495,9 +513,10 @@ function renderQuiz() {
     const isRight = engine.normalizeAnswer(q.answer).includes(letter);
     let cls = 'option';
     if (revealed) {
+      // 揭晓后不在题干上方做整块变色（颜色规则统一放到下方解析列表里），
+      // 这里只做禁用与「当前选中」的轻提示
       cls += ' option--disabled';
-      if (isRight) cls += ' option--right';
-      else if (selected) cls += ' option--wrong';
+      if (selected) cls += ' option--picked';
     } else if (selected) {
       cls += ' option--selected';
     }
@@ -557,10 +576,13 @@ function renderQuiz() {
           : engine.normalizeAnswer(q.answer).join('、');
       feedbackNode = h(`div.feedback.feedback--${ok ? 'right' : 'wrong'}`, null, [
         h('div.feedback__title', { text: ok ? '✅ 回答正确' : '❌ 回答错误' }),
+        // 选择类：把四个选项再列一遍，用文字颜色 + 标签标清楚
+        isTextType ? null : optionAnalysisList(q, session.answers[q.id] || []),
         h('div.feedback__line', null, [
           '正确答案：',
-          h('b', { text: rightText }),
-          ` ｜ 你的答案：${mine || '未作答'}`,
+          h('b.correct-option-text', { text: rightText }),
+          ' ｜ 你的答案：',
+          h(`b${ok ? '.correct-option-text' : '.wrong-option-text'}`, { text: mine || '未作答' }),
         ]),
         h('div.feedback__line', null, ['解析：', h('span', { text: q.analysis })]),
       ]);
@@ -692,9 +714,11 @@ export function SheetView() {
         onclick: () => {
           session.currentIndex = i;
           if (submitted) {
-            go('home');
+            // 已交卷：进入该题的解析详情并自动滚到该题，不再跳回主页
+            go(`${session.resultPath || `result/${session.id}`}?q=${encodeURIComponent(q.id)}&from=sheet`);
           } else {
-            rerenderQuiz();
+            // 未交卷：回到答题页并停在该题（currentIndex 已设置）
+            go(`${session.quizPath}?from=sheet&token=${encodeURIComponent(active ? active.token : '')}`);
           }
         },
       });
@@ -741,11 +765,15 @@ function legendItem(text, cls) {
 /* 结果页                                                              */
 /* ------------------------------------------------------------------ */
 
-export function ResultView({ id }) {
+export function ResultView({ id, query = {} }) {
   const record = store.getSession(id);
   const session = state.getSession();
   const isActive =
     session && session.result && (session.id === id || (!id && session.submitted)) ? session : null;
+
+  // 从答题卡点进来时定位到指定题；返回时回到答题卡
+  const anchorId = query.q || null;
+  const fromSheet = query.from === 'sheet';
 
   const data = isActive ? session.result : record;
   if (!data) {
@@ -812,10 +840,26 @@ export function ResultView({ id }) {
       h(
         'div',
         null,
-        detail.map((d, i) => analysisItem(d, i, session && session.id === id ? session : null))
+        detail.map((d, i) => {
+          const node = analysisItem(d, i, session && session.id === id ? session : null);
+          // 从答题卡跳进来时，给目标题打标记，稍后滚动定位并高亮
+          if (node && anchorId && d.questionId === anchorId) {
+            node.classList.add('is-anchor');
+            node.setAttribute('data-anchor', '1');
+          }
+          return node;
+        })
       ),
     ]),
   ]);
+
+  // 首帧后滚动到目标题
+  if (anchorId) {
+    requestAnimationFrame(() => {
+      const el = document.querySelector('.analysis-item[data-anchor="1"]');
+      if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
+  }
 
   const wrongIds = wrongQuestions.map((d) => d.questionId);
   const footer = h('div.footer-bar', null, [
@@ -840,7 +884,111 @@ export function ResultView({ id }) {
         }),
   ]);
 
-  return h('div.page', null, [header({ title: '答题结果', onBack: () => go('home') }), body, footer]);
+  return h('div.page', null, [
+    header({
+      title: '答题结果',
+      onBack: () => {
+        // 从答题卡来的就回答题卡，否则回首页
+        if (fromSheet) go('sheet');
+        else go('home');
+      },
+    }),
+    body,
+    footer,
+  ]);
+}
+
+/* ------------------------------------------------------------------ */
+/* 选项渲染（解析用）：只改文字颜色，不加背景/边框变色                   */
+/* ------------------------------------------------------------------ */
+
+/** 从答案值里取出选项字母集合（兼容 'A'、['A']、['A','C']） */
+function lettersOf(answer) {
+  const arr = Array.isArray(answer) ? answer : answer == null ? [] : [answer];
+  return arr
+    .map((x) => String(x).trim().toUpperCase())
+    .filter((x) => /^[A-E]$/.test(x));
+}
+
+/**
+ * 渲染解析态的选项列表。
+ *
+ * 颜色规则（按用户要求，只改**文字颜色**）：
+ *   正确答案                → 绿色文字
+ *   用户选错的那个          → 红色文字
+ *   选对且是正确答案        → 绿色文字（同时带两个标签）
+ *   未选且非正确答案        → 默认颜色，不变色
+ * 每个选项右侧用小标签说明「正确答案 / 你的选择 / 选错」。
+ *
+ * @param {object} q          题目
+ * @param {Array}  userAnswer 用户答案（字母数组或字符串）
+ */
+function optionAnalysisList(q, userAnswer) {
+  const options = Array.isArray(q.options) ? q.options : [];
+  if (!options.length) return null;
+
+  const right = new Set(lettersOf(q.answer));
+  const mine = new Set(lettersOf(userAnswer));
+  const multi = right.size > 1;
+
+  return h(
+    'div.options.options--analysis',
+    null,
+    options.map((text, i) => {
+      const letter = engine.LETTERS[i];
+      const isRight = right.has(letter);
+      const isMine = mine.has(letter);
+
+      // 文字颜色 class
+      let textCls = 'option__text normal-option-text';
+      if (isRight) textCls = 'option__text correct-option-text';
+      else if (isMine) textCls = 'option__text wrong-option-text';
+
+      // 标签
+      const labels = [];
+      if (isRight) labels.push(tag('正确答案', 'easy'));
+      if (isMine && isRight) labels.push(tag('你的选择', 'primary'));
+      else if (isMine && !isRight) labels.push(tag('选错', 'hard'));
+
+      return h(`div.option.option--analysis${isRight ? '.is-right' : isMine ? '.is-wrong' : ''}`, null, [
+        h('span.option__key', { text: letter }),
+        h('span', { class: textCls, text: text }),
+        labels.length ? h('span.option__labels', null, labels) : null,
+      ]);
+    })
+  );
+}
+
+/** 主观题（简答/论述/辨析理由/填空）的参考答案块 */
+function subjectiveAnswerNode(q, userText, fallbackAnswer) {
+  const points = Array.isArray(q.points) ? q.points : [];
+  const mine = String(userText || '').trim();
+  // 填空题的可接受答案在 q.answer 里，简答/论述在 q.answerText 里
+  const refText =
+    q.answerText ||
+    (Array.isArray(q.answer) && q.answer.length ? q.answer.join(' / ') : '') ||
+    fallbackAnswer ||
+    '（未提供参考答案）';
+  return [
+    h('div.feedback__line', null, [
+      '你的答案：',
+      h('b', { text: mine || '未作答' }),
+    ]),
+    points.length >= 2
+      ? h('div.points', null, [
+          h('div.points__title', { text: `参考答案要点（${points.length} 点，踩点给分）` }),
+          h(
+            'ol.points__list',
+            null,
+            points.map((p) => h('li.points__item', { text: p }))
+          ),
+        ])
+      : h('div.feedback__line', null, [
+          '参考答案：',
+          h('b.correct-option-text', { text: refText }),
+        ]),
+    h('div.feedback__line', null, ['评分提示：', h('span', { text: q.analysis })]),
+  ];
 }
 
 function analysisItem(d, index, session) {
@@ -860,6 +1008,10 @@ function analysisItem(d, index, session) {
           : String(d.rightAnswer || '')
         : engine.normalizeAnswer(d.rightAnswer).join('、');
 
+  // 选项列表：选择类题目**完整列出四个选项**并标注颜色与标签
+  const isChoice = type === 'single' || type === 'multiple';
+  const optionsNode = isChoice ? optionAnalysisList(q, d.userAnswer || []) : null;
+
   return h('div.analysis-item', null, [
     h('div.analysis-item__head', null, [
       h('span.analysis-item__no', { text: `第 ${index + 1} 题` }),
@@ -871,24 +1023,25 @@ function analysisItem(d, index, session) {
       store.isMastered(q.id) ? tag('已掌握', 'easy') : null,
     ]),
     h('div.analysis-item__stem', { text: q.stem }),
-    // 有要点的主观题：逐条列出参考答案要点（手机上更好背）
-    q.points && q.points.length >= 2
-      ? h('div.points', null, [
-          h('div.points__title', { text: `参考答案要点（${q.points.length} 点，踩点给分）` }),
-          h(
-            'ol.points__list',
-            null,
-            q.points.map((p) => h('li.points__item', { text: p }))
-          ),
+
+    // ① 选择类：题干下的四个选项（颜色 + 标签）
+    optionsNode,
+
+    // ② 主观题：你的答案 + 参考答案要点
+    !isChoice
+      ? h('div.mt-12', null, subjectiveAnswerNode(q, d.userAnswer, right))
+      : null,
+
+    // ③ 选择类：保留一行文字汇总，方便快速核对
+    isChoice
+      ? h('div.analysis-item__answer.mt-12', null, [
+          '正确答案：',
+          h('b.correct-option-text', { text: right }),
+          ' ｜ 你的答案：',
+          h(`b${d.correct ? '.correct-option-text' : '.wrong-option-text'}`, { text: mine }),
         ])
-      : h('div.analysis-item__answer', null, [
-          type === 'short' ? '参考答案：' : '正确答案：',
-          h('em', { text: right }),
-        ]),
-    h('div.analysis-item__answer', null, [
-      '你的答案：',
-      h(`em${d.correct || pending ? '' : '.mine-wrong'}`, { text: mine }),
-    ]),
+      : null,
+
     h('div.analysis-item__analysis', null, [h('b', { text: '解析：' }), q.analysis]),
     session
       ? h('button.btn.btn--sm.btn--outline.mt-8', {
@@ -907,17 +1060,34 @@ function analysisItem(d, index, session) {
 /* 错题单题回顾                                                        */
 /* ------------------------------------------------------------------ */
 
-export function ReviewView({ id }) {
+export function ReviewView({ id, query = {} }) {
+  // 返回时回到来源页面，而不是统一回首页
+  const fromKey = query.from || 'wrong';
+  const backTo = () => {
+    if (fromKey === 'result' && query.resultId) {
+      go(`result/${query.resultId}`);
+      return;
+    }
+    if (fromKey === 'sheet') {
+      go('sheet');
+      return;
+    }
+    if (fromKey === 'history') {
+      go('history');
+      return;
+    }
+    go('wrong');
+  };
+
   const q = getQuestion(id);
   if (!q) {
     return h('div.page', null, [
-      header({ title: '题目回顾', onBack: () => go('wrong') }),
+      header({ title: '题目回顾', onBack: backTo }),
       h('div.page__body', null, emptyState('🔍', '题目不存在')),
     ]);
   }
 
   const item = store.getWrongBook().find((w) => w.questionId === id);
-  const byLetter = new Map((Array.isArray(q.options) ? q.options : []).map((text, i) => [engine.LETTERS[i], text]));
   const qType = engine.normalizeType(q.type);
   const isTextType = qType === 'fill' || qType === 'short';
   const rightText = isTextType
@@ -934,27 +1104,11 @@ export function ReviewView({ id }) {
         item ? tag(`错 ${item.wrongCount} 次`, 'hard') : null,
       ]),
       h('div.stem__text', { text: q.stem }),
-      isTextType
-        ? null
-        : h(
-            'div.options',
-            null,
-            (Array.isArray(q.options) ? q.options : []).map((_, i) => {
-              const letter = engine.LETTERS[i];
-              const isRight = engine.normalizeAnswer(q.answer).includes(letter);
-              const isMine = item && engine.normalizeAnswer(item.lastAnswer).includes(letter);
-              let cls = 'option option--disabled';
-              if (isRight) cls += ' option--right';
-              else if (isMine) cls += ' option--wrong';
-              return h(`div.${cls.split(' ').join('.')}`, null, [
-                h('span.option__key', { text: letter }),
-                h('span.option__text', { text: byLetter.get(letter) }),
-              ]);
-            })
-          ),
+      // 选择类题目：完整列出选项，用文字颜色 + 标签标注（与结果页一致）
+      isTextType ? null : optionAnalysisList(q, item ? item.lastAnswer : []),
     ]),
     h('div.feedback.feedback--right.mt-12', null, [
-      h('div.feedback__title', { text: qType === 'short' ? '参考答案' : '正确答案' }),
+      h('div.feedback__title', { text: qType === 'short' || qType === 'essay' ? '参考答案' : '正确答案' }),
       q.points && q.points.length >= 2
         ? h('div.points', null, [
             h('div.points__title', { text: `参考答案要点（${q.points.length} 点）` }),
@@ -964,7 +1118,7 @@ export function ReviewView({ id }) {
               q.points.map((p) => h('li.points__item', { text: p }))
             ),
           ])
-        : h('div.feedback__line', null, [h('b', { text: rightText })]),
+        : h('div.feedback__line', null, [h('b.correct-option-text', { text: rightText })]),
       item
         ? h('div.feedback__line', null, [
             qType === 'short' || qType === 'fill' ? '你上次填写：' : '你上次选择了：',
@@ -995,5 +1149,5 @@ export function ReviewView({ id }) {
     }),
   ]);
 
-  return h('div.page', null, [header({ title: '错题回顾', onBack: () => go('wrong') }), body, footer]);
+  return h('div.page', null, [header({ title: '错题回顾', onBack: backTo }), body, footer]);
 }

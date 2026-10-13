@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 成考题库专用验证：确认新题库在真实浏览器里可正常练习。
  *
  *   node scripts/e2e-exam.mjs http://localhost:5213
@@ -141,10 +141,18 @@ async function main() {
   await sleep(900);
   const afterPick = await evaluate(`(() => {
     const fb = document.querySelector('.feedback');
-    return { feedback: fb ? fb.innerText : null, right: document.querySelectorAll('.option--right').length };
+    return {
+      feedback: fb ? fb.innerText : null,
+      // 解析区用文字颜色标出正确答案（不再整块变色）
+      rightText: document.querySelectorAll('.correct-option-text').length,
+      optionCount: document.querySelectorAll('.options--analysis .option').length,
+      labels: [...document.querySelectorAll('.options--analysis .option__labels .tag')].map((t) => t.innerText.trim()),
+    };
   })()`);
   check('作答后显示解析', Boolean(afterPick.feedback));
-  check('标出正确答案', afterPick.right >= 1, `标出 ${afterPick.right} 个`);
+  check('标出正确答案（文字变色）', afterPick.rightText >= 1, `标出 ${afterPick.rightText} 处`);
+  check('解析区列出四个选项', afterPick.optionCount === 4, `选项数=${afterPick.optionCount}`);
+  check('解析区带对错标签', afterPick.labels.length > 0, afterPick.labels.join('/'));
   await shot('33-real-exam-feedback');
 
   console.log('\n[3] 政治辨析题（判断正误 + 说明理由）');
