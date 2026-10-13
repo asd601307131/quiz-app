@@ -15,7 +15,7 @@ import * as state from '../core/state.js';
 import * as engine from '../core/engine.js';
 import { QUESTIONS, getQuestion, getChapter } from '../data/questions.js';
 import { SUBJECTS, getSubject, subjectOfChapter, chapterIdsOfSubject } from '../data/subjects.js';
-import { fmtClock, fmtDuration, fmtTime, percent, shuffle } from '../core/utils.js';
+import { fmtClock, fmtDuration, fmtTime, percent, shuffle, bindSwipe } from '../core/utils.js';
 import { go, back } from '../app.js';
 
 /* ------------------------------------------------------------------ */
@@ -675,7 +675,47 @@ function renderQuiz() {
     ])
   );
 
-  return h('div.page', null, [headerEl, meta, h('div.page__body', null, [stemCard, feedbackNode]), footer]);
+  const body = h('div.page__body', null, [stemCard, feedbackNode]);
+
+  /**
+   * 左右滑动切上/下一题（与「上一题 / 下一题」按钮等价）。
+   * 挂载在答题区上；每次 rerender 重建 DOM，旧监听随旧节点一起丢弃。
+   */
+  bindSwipe(body, {
+    onLeft: () => goToQuestion(session, session.currentIndex + 1),
+    onRight: () => goToQuestion(session, session.currentIndex - 1),
+  });
+
+  // 首次进入答题时提示一次手势（每个浏览器只提示一次）
+  if (session.currentIndex === 0 && store.getSetting('ui.swipeHintShown', false) !== true) {
+    store.setSetting('ui.swipeHintShown', true);
+    setTimeout(() => toast('提示：左右滑动可切换上/下一题', 2200), 600);
+  }
+
+  return h('div.page', null, [headerEl, meta, body, footer]);
+}
+
+/**
+ * 切换到指定题号（滑动与按钮共用）。
+ * 越界时给出轻提示，不改变当前题。
+ */
+function goToQuestion(session, index) {
+  const total = session.questions.length;
+  if (index < 0) {
+    toast('已经是第一题');
+    return;
+  }
+  if (index > total - 1) {
+    toast('已经是最后一题');
+    return;
+  }
+  if (index === session.currentIndex) return;
+  const wasLast = session.currentIndex >= total - 1;
+  session.currentIndex = index;
+  const isLast = index >= total - 1;
+  // 边界切换时清掉上一题留下的 toast，避免叠加
+  if (wasLast !== isLast) document.querySelectorAll('.toast').forEach((n) => n.remove());
+  rerender();
 }
 
 /* ------------------------------------------------------------------ */

@@ -300,8 +300,86 @@ async function main() {
   check('主观题显示参考答案与评分提示', subjAfter.hasPoints > 0 || subjAfter.feedbackText.includes('参考'), subjAfter.feedbackText);
   await shot('94-subjective-unaffected');
 
+  /* ---------- 手势：左右滑动切题 ---------- */
+  console.log('\n[8] 左右滑动切换上/下一题');
+  await ev(`location.hash = '#/chapter/p1-1';`); await sleep(1200);
+  await ev(`(() => { const b=[...document.querySelectorAll('.btn')].find(x=>x.innerText.includes('开始顺序练习')); if(b)b.click(); })()`);
+  await sleep(1500);
+
+  const readIndex = `(() => {
+    const el = document.querySelector('.header__extra span, .header__extra');
+    const t = el ? el.innerText : '';
+    const m = /(\\d+)\\s*\\/\\s*(\\d+)/.exec(t);
+    return m ? Number(m[1]) : null;
+  })()`;
+
+  /** 在答题区上合成一次触摸滑动 */
+  const swipe = async (dx) => {
+    await ev(`(() => {
+      const el = document.querySelector('.page__body');
+      const mk = (type, x, y) => {
+        const t = new Touch({ identifier: 1, target: el, clientX: x, clientY: y });
+        return new TouchEvent(type, {
+          bubbles: true, cancelable: true,
+          touches: type === 'touchend' ? [] : [t],
+          targetTouches: type === 'touchend' ? [] : [t],
+          changedTouches: [t],
+        });
+      };
+      const y = 400;
+      el.dispatchEvent(mk('touchstart', 300, y));
+      el.dispatchEvent(mk('touchmove', 300 + ${dx}, y));
+      el.dispatchEvent(mk('touchend', 300 + ${dx}, y));
+    })()`);
+    await sleep(900);
+  };
+
+  const idx0 = await ev(readIndex);
+  await swipe(-120); // 左滑 → 下一题
+  const idx1 = await ev(readIndex);
+  check('左滑进入下一题', idx1 === idx0 + 1, `${idx0} → ${idx1}`);
+
+  await swipe(120); // 右滑 → 上一题
+  const idx2 = await ev(readIndex);
+  check('右滑回到上一题', idx2 === idx0, `${idx1} → ${idx2}`);
+
+  // 垂直滑动不应切题
+  await ev(`(() => {
+    const el = document.querySelector('.page__body');
+    const mk = (type, x, y) => {
+      const t = new Touch({ identifier: 2, target: el, clientX: x, clientY: y });
+      return new TouchEvent(type, {
+        bubbles: true, cancelable: true,
+        touches: type === 'touchend' ? [] : [t],
+        targetTouches: type === 'touchend' ? [] : [t],
+        changedTouches: [t],
+      });
+    };
+    el.dispatchEvent(mk('touchstart', 200, 300));
+    el.dispatchEvent(mk('touchmove', 230, 500));
+    el.dispatchEvent(mk('touchend', 230, 500));
+  })()`);
+  await sleep(900);
+  const idx3 = await ev(readIndex);
+  check('竖向/斜向滑动不切题（避免与滚动冲突）', idx3 === idx2, `${idx2} → ${idx3}`);
+
+  // 第一题右滑应停住并提示
+  await ev(`location.hash = '#/quiz/chapter/p1-1';`); await sleep(1400);
+  await swipe(140);
+  const idx4 = await ev(readIndex);
+  check('第一题继续右滑不会越界', idx4 === 1, `当前第 ${idx4} 题`);
+
+  // 答题卡/选项点击不受手势影响
+  await swipe(-120);
+  const before = await ev(readIndex);
+  await ev(`document.querySelector('.option').click()`);
+  await sleep(900);
+  const afterClick = await ev(`({ idx: ${readIndex}, hasFeedback: Boolean(document.querySelector('.feedback')) })`);
+  check('滑动后仍可正常点选选项', afterClick.hasFeedback && afterClick.idx === before, `第 ${afterClick.idx} 题，反馈=${afterClick.hasFeedback}`);
+  await shot('95-swipe-navigation');
+
   /* ---------- 验收 9：控制台无报错 ---------- */
-  console.log('\n[8] 控制台');
+  console.log('\n[9] 控制台');
   const real = consoleErrors.filter((e) => !/favicon|manifest/i.test(e));
   check('无 JS 报错', real.length === 0, real.slice(0, 2).join(' | '));
 
