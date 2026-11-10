@@ -86,6 +86,14 @@ async function main() {
   await shot('A0-home-electrician');
 
   console.log('\n[2] 题库板块与章节');
+  // 题量从应用数据里读，避免题库更新后测试写死失效
+  const bankMeta = await ev(`(async () => {
+    const m = await import('./src/data/questions.js');
+    const t = {};
+    m.QUESTIONS.forEach((q) => { t[q.type] = (t[q.type] || 0) + 1; });
+    return { questions: m.QUESTIONS.length, chapters: m.CHAPTERS.length, types: t };
+  })()`);
+  console.log(`     题库: ${bankMeta.questions} 题 / ${bankMeta.chapters} 章节`);
   await ev(`location.hash = '#/subjects';`); await sleep(1200);
   const subj = await ev(`({ cards: document.querySelectorAll('.subject-card').length, text: document.body.innerText })`);
   check('板块页有 1 个板块', subj.cards === 1, `实际 ${subj.cards}`);
@@ -104,7 +112,7 @@ async function main() {
     ['职业素养', '理论基础', '电机与变压器', '自动化与控制', '电气安全'].every((k) => detail0.titles.join('').includes(k)),
     detail0.titles.join(' | '));
   check('展开后章节条目齐全', detail.items >= 5, `条目 ${detail.items}`);
-  check('显示总题量 361', detail0.text.includes('361'), detail0.text.slice(0, 60));
+  check('显示题库总题量', detail0.text.includes(String(bankMeta.questions)), '期望 ' + bankMeta.questions + ' | ' + detail0.text.slice(0, 60));
   await shot('A1-subject-chapters');
 
   console.log('\n[3] 进入章节答题');

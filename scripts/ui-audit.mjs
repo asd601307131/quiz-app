@@ -55,11 +55,10 @@ async function evaluate(expression) {
 const PAGES = [
   { name: '首页', hash: '#/home' },
   { name: '板块', hash: '#/subjects' },
-  { name: '政治板块', hash: '#/subject/politics' },
-  { name: '英语板块', hash: '#/subject/english' },
+  { name: '电工板块', hash: '#/subject/electrician' },
   { name: '技巧目录', hash: '#/strategy' },
-  { name: '技巧详情', hash: '#/strategy/strat-exam-score' },
-  { name: '章节详情', hash: '#/chapter/subj-bx' },
+  { name: '技巧详情', hash: '#/strategy/strat-exam-format' },
+  { name: '章节详情', hash: '#/chapter/elec-basic' },
   { name: '错题本', hash: '#/wrong' },
   { name: '记录', hash: '#/history' },
   { name: '我的', hash: '#/profile' },
@@ -250,7 +249,7 @@ async function main() {
   await evaluate(`location.hash = '#/subject/politics';`);
   await sleep(1100);
   const darkLayout = await evaluate(PROBE);
-  console.log(`\n【政治板块·深色】截断 ${darkLayout.clippedCount} / 溢出 ${darkLayout.overflowCount} / 触控过小 ${darkLayout.smallCount}`);
+  console.log(`\n【电工板块·深色】截断 ${darkLayout.clippedCount} / 溢出 ${darkLayout.overflowCount} / 触控过小 ${darkLayout.smallCount}`);
 
   await send('Emulation.setEmulatedMedia', { features: [] });
 
