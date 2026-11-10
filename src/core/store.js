@@ -319,9 +319,9 @@ const DEFAULT_SETTINGS = {
   shuffleOptions: false, // 考试模式是否打乱选项
   // 默认关闭自动下一题：作答后要能看清正确答案与解析，跳太快等于白做
   autoNext: false,
-  // 真卷是 35 道选择题、全卷 150 分钟；模拟考试默认按真卷规模出题
-  examQuestionCount: 35,
-  examDurationMin: 135,
+  // 电工等级认定理论考试：40 道客观题、60 分钟
+  examQuestionCount: 40,
+  examDurationMin: 60,
 };
 
 export function getSettings() {

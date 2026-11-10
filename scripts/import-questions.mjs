@@ -26,7 +26,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { extractPoints } from '../src/core/points.js';
+import { extractPoints, shouldExtractPoints } from '../src/core/points.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -511,8 +511,7 @@ function pathToFileUrl(p) {
 
 function renderQuestion(q, indent = '  ') {
   // 主观题：把参考答案拆成要点，方便手机端按「踩点给分」的方式背诵
-  const points =
-    (q.type === 'short' || q.type === 'judge') && q.answerText ? extractPoints(q.answerText) : [];
+  const points = shouldExtractPoints(q.type) && q.answerText ? extractPoints(q.answerText) : [];
 
   const lines = [];
   lines.push(`${indent}{`);

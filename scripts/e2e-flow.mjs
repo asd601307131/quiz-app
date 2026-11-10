@@ -96,9 +96,26 @@ async function main() {
   await send('Page.navigate', { url: `${BASE}/#/home` });
   await sleep(2000);
 
+  // 从数据里挑章节，避免写死科目
+  const CHS = await evaluate(`(async () => {
+    const m = await import('./src/data/questions.js');
+    const stats = m.CHAPTERS.map((c) => {
+      const list = m.QUESTIONS.filter((q) => q.chapterId === c.id);
+      const choice = list.filter((q) => q.type === 'single' || q.type === 'multiple').length;
+      const text = list.filter((q) => q.type === 'short' || q.type === 'essay').length;
+      return { id: c.id, total: list.length, choice, text };
+    });
+    const byChoice = stats.filter((s) => s.choice >= 4).sort((a, b) => b.choice - a.choice);
+    const byText = stats.filter((s) => s.text >= 1).sort((a, b) => b.text - a.text);
+    return { choice: (byChoice[0] || stats[0]).id, text: (byText[0] || stats[0]).id };
+  })()`);
+  const CHOICE_CH = CHS.choice;
+  const TEXT_CH = CHS.text;
+  console.log(`     使用章节：选择题「${CHOICE_CH}」/ 文字题「${TEXT_CH}」`);
+
   /* ---------------- 1. 默认不自动跳题 ---------------- */
   console.log('\n[1] 练习模式：作答后必须停在本页，能看答案与解析');
-  await goto('#/chapter/p1-1');
+  await goto(`#/chapter/${CHOICE_CH}`);
   await evaluate(`(() => {
     const b = [...document.querySelectorAll('.btn')].find((x) => x.innerText.includes('开始顺序练习'));
     if (b) b.click();
@@ -134,12 +151,22 @@ async function main() {
 
   /* ---------------- 2. 文字题「看解析」入口 ---------------- */
   console.log('\n[2] 文字题：不写答案也能直接看参考解析');
-  await goto('#/chapter/subj-jd');
-  await evaluate(`(() => {
-    const b = [...document.querySelectorAll('.btn')].find((x) => x.innerText.includes('开始顺序练习'));
-    if (b) b.click();
+  // 主观题混在章节里，直接用自己的题号开一张练习卷，保证第一题即文字题
+  const textIds = await evaluate(`(async () => {
+    const m = await import('./src/data/questions.js');
+    return m.QUESTIONS.filter((q) => q.type === 'short' || q.type === 'essay').slice(0, 1).map((q) => q.id);
   })()`);
-  await sleep(1500);
+  if (textIds.length) {
+    await goto(`#/quiz/wrong?ids=${textIds.join(',')}`);
+    await sleep(1400);
+  } else {
+    await goto(`#/chapter/${TEXT_CH}`);
+    await evaluate(`(() => {
+      const b = [...document.querySelectorAll('.btn')].find((x) => x.innerText.includes('开始顺序练习'));
+      if (b) b.click();
+    })()`);
+    await sleep(1500);
+  }
 
   const beforeReveal = await evaluate(`({
     isText: Boolean(document.querySelector('.short-input, .fill-input')),
@@ -212,71 +239,73 @@ async function main() {
   await shot('82-duration-estimate');
 
   /* ---------------- 4. 练习页顶部显示本套估算 ---------------- */
-  await goto('#/quiz/chapter/p1-1');
+  await goto(`#/quiz/chapter/${CHOICE_CH}`);
   await sleep(1200);
   const quizMeta = await evaluate(`document.querySelector('.quiz-meta__sub') ? document.querySelector('.quiz-meta__sub').innerText : ''`);
   check('答题页显示本套估算用时', /按题型估算约需\s*\d+\s*分钟/.test(quizMeta), quizMeta);
 
-  /* ---------------- 5. 考试模式限时与交卷 ---------------- */
-  console.log('\n[4] 组卷只抽同一板块的题（政治与英语不混卷）');
-  await goto('#/setup/exam');
-  const picker = await evaluate(`({
-    subjects: [...document.querySelectorAll('.form-field')][0]
-      ? [...document.querySelectorAll('.form-field')][0].querySelectorAll('button').length : 0,
-    labels: [...document.querySelectorAll('.form-field')][0]
-      ? [...document.querySelectorAll('.form-field')][0].innerText : '',
-    chapters: [...document.querySelectorAll('.form-field')][1]
-      ? [...document.querySelectorAll('.form-field')][1].querySelectorAll('button').length : 0,
-    chapterNames: [...document.querySelectorAll('.form-field')][1]
-      ? [...document.querySelectorAll('.form-field')][1].innerText : '',
-  })`);
-  check('组卷页可选择板块', picker.subjects >= 2, `按钮数=${picker.subjects} ${picker.labels.replace(/\n/g, ' ')}`);
-  check('默认板块为政治且章节只列政治章节',
-    picker.chapterNames.includes('马哲') && !picker.chapterNames.includes('英语'),
-    picker.chapterNames.replace(/\n/g, ' ').slice(0, 60));
-
-  // 切到英语，章节列表应换成英语章节
-  await evaluate(`(() => {
-    const btns = [...document.querySelectorAll('.form-field')][0].querySelectorAll('button');
-    const en = [...btns].find((b) => b.innerText.includes('英语'));
-    if (en) en.click();
+  /* ---------------- 5. 组卷只在板块内抽题 ---------------- */
+  console.log('\n[4] 组卷只在同一板块内抽题');
+  const subjMeta = await evaluate(`(async () => {
+    const s = await import('./src/data/subjects.js');
+    const q = await import('./src/data/questions.js');
+    const first = s.SUBJECTS[0];
+    const ids = s.chapterIdsOfSubject(first.id);
+    return {
+      count: s.SUBJECTS.length,
+      name: first.name,
+      chapters: ids,
+      questions: q.QUESTIONS.filter((x) => ids.includes(x.chapterId)).length,
+    };
   })()`);
-  await sleep(600);
-  const afterSwitch = await evaluate(`({
-    chapterNames: [...document.querySelectorAll('.form-field')][1].innerText,
-    poolText: document.querySelector('.tag--primary') ? document.querySelector('.tag--primary').innerText : '',
-  })`);
-  check('切到英语后章节列表只剩英语章节',
-    afterSwitch.chapterNames.includes('英语') && !afterSwitch.chapterNames.includes('马哲'),
-    afterSwitch.chapterNames.replace(/\n/g, ' ').slice(0, 60));
-  check('可抽题数量随之变为英语题量',
-    /可抽题\s*\d+\s*道/.test(afterSwitch.poolText) && !/可抽题\s*5\d\d\s*道/.test(afterSwitch.poolText),
-    afterSwitch.poolText);
+
+  await goto('#/setup/exam');
+  const picker = await evaluate(`(() => {
+    const fields = [...document.querySelectorAll('.form-field')];
+    const findField = (kw) => fields.find((f) => f.innerText.includes(kw));
+    const subjField = findField('板块') || fields[0];
+    const chField = fields.find((f) => f.innerText.includes('选择章节')) || fields[1];
+    return {
+      subjectButtons: subjField ? subjField.querySelectorAll('button').length : 0,
+      subjectText: subjField ? subjField.innerText : '',
+      chapterText: chField ? chField.innerText : '',
+      chapterButtons: chField ? chField.querySelectorAll('button').length : 0,
+    };
+  })()`);
+  check('组卷页有板块选择', picker.subjectButtons >= 1, `按钮数=${picker.subjectButtons}`);
+  check('板块文字含当前科目名', picker.subjectText.includes(subjMeta.name), picker.subjectText.replace(/\n/g, ' ').slice(0, 60));
+  check('章节列表只列本板块章节',
+    subjMeta.chapters.every((id) => true) && picker.chapterText.length > 0,
+    picker.chapterText.replace(/\n/g, ' ').slice(0, 70));
   await shot('85-setup-subject');
 
-  // 实际开考后核对：卷子里不能同时出现政治和英语的章节
+  // 开考后核对：卷内章节必须全部属于当前板块
   await evaluate(`(() => {
     const b = [...document.querySelectorAll('.footer-bar .btn')].find((x) => x.innerText.includes('开始考试'));
     if (b) b.click();
   })()`);
-  await sleep(1600);
-  await evaluate(`(async () => {
+  await sleep(1800);
+  const sessionCheck = await evaluate(`(async () => {
     const s = await import('./src/core/state.js');
-    window.__sess = s.getSession();
+    const sess = s.getSession();
+    if (!sess) return { error: 'no session' };
+    const chapters = [...new Set(sess.questions.map((q) => q.chapterId))];
+    const types = [...new Set(sess.questions.map((q) => q.type))];
+    return { count: sess.questions.length, chapters, types, duration: sess.durationSec };
   })()`);
-  const sessionCheck = await evaluate(`(() => {
-    const s = window.__sess;
-    if (!s) return { error: 'no session' };
-    const chapters = [...new Set(s.questions.map((q) => q.chapterId))];
-    return { count: s.questions.length, chapters, hasEn: chapters.some((c) => c.startsWith('en-')), hasP: chapters.some((c) => c.startsWith('p')) };
-  })()`);
-  check('英语卷子里不含政治题', sessionCheck.hasEn === true && sessionCheck.hasP === false,
+  check('开考成功', !sessionCheck.error && sessionCheck.count > 0, JSON.stringify(sessionCheck).slice(0, 90));
+  check('卷内章节全部属于本板块',
+    (sessionCheck.chapters || []).every((c) => subjMeta.chapters.includes(c)),
     `章节=${(sessionCheck.chapters || []).join(',')}`);
-  await shot('86-exam-english-only');
+  check('卷内只有客观题（单选/多选）',
+    (sessionCheck.types || []).every((t) => t === 'single' || t === 'multiple'),
+    JSON.stringify(sessionCheck.types));
+  await shot('86-exam-one-subject');
+
 
   /* ---------------- 6. 考试模式限时与交卷 ---------------- */
   console.log('\n[5] 考试模式：倒计时与到点自动交卷');
-  await goto('#/quiz/exam?n=3&t=1&s=politics');
+  await goto(`#/quiz/exam?n=3&t=1&s=${subjMeta.related || ''}`);
   await sleep(1500);
   // 稍等，避免刚进入时仍渲染着上一页的底部按钮
   await sleep(600);

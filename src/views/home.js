@@ -24,13 +24,11 @@ function chapterProgress(chapterId) {
   return { done: done.size, total, percent: percent(done.size, total) };
 }
 
-/** 主观题掌握进度：冲刺阶段用它判断还差多少 */
+/** 主观题掌握进度：只统计不参与判分的主观题（简答 / 论述） */
 function subjectiveProgress() {
-  const subjective = QUESTIONS.filter((q) => q.type === 'short' || q.type === 'judge');
-  const mastered = store.getMasteredIds().filter((id) => {
-    const q = getQuestion(id);
-    return q && (q.type === 'short' || q.type === 'judge');
-  });
+  const isSubjective = (q) => q && (q.type === 'short' || q.type === 'essay');
+  const subjective = QUESTIONS.filter(isSubjective);
+  const mastered = store.getMasteredIds().filter((id) => isSubjective(getQuestion(id)));
   return {
     total: subjective.length,
     mastered: mastered.length,
@@ -86,19 +84,19 @@ export function HomeView() {
     h('div.list__sub.mt-8', {
       text: subj.mastered
         ? `已掌握 ${subj.mastered} 道（辨析题 + 简答论述），继续把剩下的过一遍`
-        : '辨析题与简答论述占政治 80 分。做完后在解析页点「我已掌握这题」即可累计',
+        : '主观题不参与组卷，做完后在解析页点「我已掌握这题」即可累计',
     }),
     h('div.mt-12', null, [
       h('button.btn.btn--sm.btn--outline', {
         type: 'button',
-        text: '去刷辨析题专项 ›',
-        onclick: () => go('chapter/subj-bx'),
+        text: '去刷简答论述专项 ›',
+        onclick: () => go('chapter/elec-safety'),
       }),
     ]),
   ]);
 
   const modeGrid = h('div.mode-grid', null, [
-    modeCard('📚', '题库分类', '政治 / 英语两大板块，按考点逐章刷', () => go('subjects')),
+    modeCard('📚', '题库分类', '按考点逐章刷题，边练边看解析', () => go('subjects')),
     modeCard('🎯', '答题技巧', '分题型作答法、作文句型、考场规范', () => go('strategy')),
     modeCard('🎲', '随机组卷', '按板块抽题，自选章节与难度', () => go('setup/practice')),
     modeCard('📝', '模拟考试', `限时 ${store.getSettings().examDurationMin} 分钟，交卷判分`, () =>
@@ -292,7 +290,7 @@ export function ChapterView({ id }) {
 /* ------------------------------------------------------------------ */
 
 const setupState = {
-  subject: 'politics', // 科目：政治 / 英语。组卷只在同一科目内抽题
+  subject: 'electrician', // 科目：组卷只在同一科目内抽题
   chapters: [],
   difficulties: [],
   count: 10,
@@ -464,7 +462,7 @@ export function SetupView({ mode = 'practice', subject = null } = {}) {
       h('div.form-field', null, [
         h('label.form-field__label', { text: '选择板块' }),
         subjectPicker,
-        h('div.form-field__hint', { text: '只在本板块内抽题，政治与英语不会混在一份卷子里' }),
+        h('div.form-field__hint', { text: '只在本板块内抽题，不会混入其他板块的题目' }),
       ]),
       h('div.form-field', null, [
         h('label.form-field__label', { text: '选择章节（不选 = 本板块全部章节）' }),
@@ -526,7 +524,7 @@ export function SetupView({ mode = 'practice', subject = null } = {}) {
   ]);
 }
 
-// 在 SetupView 内引用题库：只抽**当前科目**下的题，避免政治与英语混卷
+// 在 SetupView 内引用题库：只抽**当前科目**下的题，避免不同板块混卷
 function QUESTIONS_FILTERED() {
   const allowed = new Set(chapterIdsOfSubject(setupState.subject));
   return QUESTIONS.filter((q) => {

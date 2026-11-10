@@ -56,7 +56,7 @@ function subjectTitle(subjectId) {
 
 /**
  * 组卷题池：**限定在单个科目内**。
- * 历史问题：不传科目时 buildPaper 会从全库抽题，导致一份卷子里既有政治又有英语。
+ * 历史问题：不传科目时 buildPaper 会从全库抽题，导致一份卷子里混入其他板块。
  * 兼容处理——若 URL 未带科目但带了对某些章节的选择，则按这些章节反推科目。
  */
 function poolOfSubject(subjectId, chapterIds) {
@@ -66,7 +66,7 @@ function poolOfSubject(subjectId, chapterIds) {
     const owner = subjectOfChapter(chapterIds[0]);
     if (owner) subject = getSubject(owner);
   }
-  if (!subject) subject = SUBJECTS[0]; // 默认政治
+  if (!subject) subject = SUBJECTS[0]; // 单选题库，默认第一个板块
 
   const allowed = new Set(chapterIdsOfSubject(subject.id));
   return QUESTIONS.filter((q) => allowed.has(q.chapterId));
@@ -106,7 +106,7 @@ function buildQuestions(route, query) {
     if (difficulties && difficulties.length) {
       pool = pool.filter((q) => difficulties.includes(q.difficulty));
     }
-    // 考试卷按真卷模块结构组卷：马哲 → 毛泽东思想 → 邓小平理论等 → 习近平新时代 → 时政
+    // 考试卷按模块结构组卷：电工基础 → 电机与变压器 → 自动化与控制 → 电气安全 → 职业素养
     const list = engine.buildStructuredPaper(pool, Number(query.n) || 35);
     return {
       list,

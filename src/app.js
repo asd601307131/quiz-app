@@ -3,7 +3,7 @@
  *
  * 路由表：
  *   #/home
- *   #/subjects | #/subject/:id           两大板块（政治 / 英语）与科目详情
+ *   #/subjects | #/subject/:id           板块列表与科目详情
  *   #/strategy | #/strategy/:id          答题技巧板块（内容讲解）
  *   #/chapters | #/chapter/:id           章节列表（兼容入口）与章节详情
  *   #/setup/practice | #/setup/exam

@@ -117,8 +117,10 @@ async function goto(hash, waitMs = 900) {
   await sleep(waitMs);
 }
 
-/** 在练习模式下答完当前整卷（单选选一个，多选选一个后确认，然后下一题） */
-async function answerPracticePaper(maxSteps = 80) {
+/** 在练习模式下答完当前整卷（单选选一个，多选选一个后确认，然后下一题）
+ *  步数按章节实际题量给足，避免题库变大后提前退出 */
+let PAPER_STEPS = 200;
+async function answerPracticePaper(maxSteps = PAPER_STEPS) {
   const trace = [];
   for (let i = 0; i < maxSteps; i += 1) {
     // 多选题：只要已选中任一选项就直接点「确认答案」；
@@ -127,7 +129,15 @@ async function answerPracticePaper(maxSteps = 80) {
       const t = document.querySelector('.footer-bar .btn--primary');
       if (!t) return 'no-btn';
       const label = t.innerText.trim();
+      const findBtn = (kw) => [...document.querySelectorAll('.footer-bar .btn')].find(b => b.innerText.includes(kw));
       if (label.includes('查看成绩') || label.includes('交卷')) return 'done:' + label;
+      // 文字题（填空/简答/论述）：没有选项，直接点「看解析」跳过作答
+      if (!document.querySelector('.option')) {
+        const reveal = findBtn('看解析');
+        if (reveal) { reveal.click(); return 'reveal-text'; }
+        if (label.includes('下一题')) { t.click(); return 'next'; }
+        return 'stuck:no-option';
+      }
       if (label.includes('确认答案')) {
         if (!document.querySelector('.option--selected')) {
           const o = document.querySelector('.option');
@@ -242,6 +252,8 @@ async function main() {
     };
   })()`);
   const CH = bank.biggest;
+  // 每道题最多 3 步（选/确认/下一题），留足余量
+  PAPER_STEPS = Math.max(120, CH.total * 3 + 20);
   console.log(
     `     题库: ${bank.questions} 题 / ${bank.chapters} 章节，本用例使用「${CH.name}」(${CH.choice} 道选择题 / 共 ${CH.total} 题)`
   );

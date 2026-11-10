@@ -107,13 +107,56 @@ async function main() {
   await send('Page.navigate', { url: `${BASE}/#/home` });
   await sleep(2200);
 
+  // 从数据里挑章节：选择题最多的 / 含主观题的，避免写死科目
+  const CHS = await ev(`(async () => {
+    const m = await import('./src/data/questions.js');
+    const stats = m.CHAPTERS.map((c) => {
+      const list = m.QUESTIONS.filter((q) => q.chapterId === c.id);
+      const choice = list.filter((q) => q.type === 'single' || q.type === 'multiple').length;
+      const text = list.filter((q) => q.type === 'short' || q.type === 'essay' || q.type === 'fill').length;
+      return { id: c.id, name: c.name, total: list.length, choice, text };
+    });
+    const byChoice = stats.filter((s) => s.choice >= 4).sort((a, b) => b.choice - a.choice);
+    const byText = stats.filter((s) => s.text >= 1).sort((a, b) => b.text - a.text);
+    return {
+      choice: (byChoice[0] || stats[0]).id,
+      text: (byText[0] || stats[0]).id,
+      all: stats,
+    };
+  })()`);
+  const CHOICE_CH = CHS.choice;
+  const TEXT_CH = CHS.text;
+  console.log(`     使用章节：选择题「${CHOICE_CH}」/ 文字题「${TEXT_CH}」`);
+
   /* ---------- 验收 1/2/3：练习即时反馈的选项与颜色 ---------- */
   console.log('\n[1] 练习作答后：解析必须完整显示四个选项 + 颜色 + 标签');
-  await ev(`location.hash = '#/chapter/p1-1';`); await sleep(1200);
+  await ev(`location.hash = '#/chapter/${CHOICE_CH}';`); await sleep(1200);
   await ev(`(() => { const b=[...document.querySelectorAll('.btn')].find(x=>x.innerText.includes('开始顺序练习')); if(b)b.click(); })()`);
   await sleep(1400);
-  // 故意选错：取第 1 个选项
-  await ev(`document.querySelector('.option').click()`);
+  // 故意选一个**确定错误**的选项（多选时点 A 可能只是部分对）
+  const wrongLetter = await ev(`(async () => {
+    const e = await import('./src/core/engine.js');
+    const d = await import('./src/data/questions.js');
+    const stem = document.querySelector('.stem__text').innerText.trim();
+    const q = d.QUESTIONS.find((x) => x.stem.trim() === stem);
+    if (!q) return null;
+    const right = e.normalizeAnswer(q.answer);
+    const letters = [...document.querySelectorAll('.options .option')].map(o => (o.querySelector('.option__key')||{}).innerText.trim());
+    return letters.find(L => !right.includes(L)) || null;
+  })()`).catch(() => null);
+
+  if (wrongLetter) {
+    await ev(`(() => {
+      const opts = [...document.querySelectorAll('.options .option')];
+      const t = opts.find(o => (o.querySelector('.option__key')||{}).innerText.trim() === '${wrongLetter}');
+      if (t) t.click();
+    })()`);
+  } else {
+    await ev(`document.querySelector('.option').click()`);
+  }
+  await sleep(1000);
+  // 多选题选一个错误项后还需确认，才能看到解析
+  await ev(`(() => { const b=[...document.querySelectorAll('.footer-bar .btn')].find(x=>x.innerText.includes('确认答案')); if(b) b.click(); })()`);
   await sleep(1000);
   const p1 = await ev(READ_OPTIONS);
   check('解析区列出 4 个选项', p1.count === 4, `实际 ${p1.count}`);
@@ -135,10 +178,10 @@ async function main() {
 
   /* ---------- 答对时：绿色 + 两个标签 ---------- */
   console.log('\n[2] 答对时：绿色 + 「正确答案」「你的选择」双标签');
-  await ev(`location.hash = '#/quiz/chapter/p1-1';`); await sleep(1400);
+  await ev(`location.hash = '#/quiz/chapter/${CHOICE_CH}';`); await sleep(1400);
   // 从**已渲染的题目卡**里读正确答案（题目对象或页面文字都可以）：
   // 更稳的做法是先点一遍，再从解析里读回正确答案，然后重进答对
-  await ev(`location.hash = '#/chapter/p1-1';`); await sleep(1200);
+  await ev(`location.hash = '#/chapter/${CHOICE_CH}';`); await sleep(1200);
   await ev(`(() => { const b=[...document.querySelectorAll('.btn')].find(x=>x.innerText.includes('开始顺序练习')); if(b)b.click(); })()`);
   await sleep(1400);
   // 先用「看解析」拿到正确答案字母（判断题位），再刷新重来答对
@@ -168,7 +211,7 @@ async function main() {
   /* ---------- 验收 4：错题本点击进入该题解析 ---------- */
   console.log('\n[3] 错题本点击某题 → 直接进入该题解析（不是答题卡）');
   // 先制造错题：逐题故意选错前 3 题
-  await ev(`location.hash = '#/chapter/p1-1';`); await sleep(1200);
+  await ev(`location.hash = '#/chapter/${CHOICE_CH}';`); await sleep(1200);
   await ev(`(() => { const b=[...document.querySelectorAll('.btn')].find(x=>x.innerText.includes('开始顺序练习')); if(b)b.click(); })()`);
   await sleep(1400);
   for (let i = 0; i < 3; i += 1) {
@@ -209,7 +252,7 @@ async function main() {
 
   /* ---------- 验收 5：答题卡点题号 ---------- */
   console.log('\n[4] 答题卡点题号 → 进入题目详情，不跳主页');
-  await ev(`location.hash = '#/quiz/chapter/p1-1';`); await sleep(1500);
+  await ev(`location.hash = '#/quiz/chapter/${CHOICE_CH}';`); await sleep(1500);
   await ev(`location.hash = '#/sheet';`); await sleep(1400);
   await ev(`document.querySelector('.sheet-cell').click()`);
   await sleep(1300);
@@ -267,7 +310,7 @@ async function main() {
 
   /* ---------- 验收 7：英语选择题同样正常 ---------- */
   console.log('\n[6] 英语选择题同样正常');
-  await ev(`location.hash = '#/chapter/en-grammar';`); await sleep(1300);
+  await ev(`location.hash = '#/chapter/${CHOICE_CH}';`); await sleep(1300);
   await ev(`(() => { const b=[...document.querySelectorAll('.btn')].find(x=>x.innerText.includes('开始顺序练习')); if(b)b.click(); })()`);
   await sleep(1400);
   await ev(`document.querySelector('.option').click()`);
@@ -279,16 +322,27 @@ async function main() {
   await shot('93-english-analysis');
 
   /* ---------- 验收 8：主观题不受影响 ---------- */
-  console.log('\n[7] 主观题 / 辨析题不受影响');
-  await ev(`location.hash = '#/chapter/subj-jd';`); await sleep(1300);
-  await ev(`(() => { const b=[...document.querySelectorAll('.btn')].find(x=>x.innerText.includes('开始顺序练习')); if(b)b.click(); })()`);
-  await sleep(1500);
+  console.log('\n[7] 主观题 / 简答论述不受影响');
+  // 主观题混在章节里，直接用它自己的题号进练习卷，保证第一题就是主观题
+  const subjIds = await ev(`(async () => {
+    const m = await import('./src/data/questions.js');
+    return m.QUESTIONS.filter((q) => q.type === 'short' || q.type === 'essay').slice(0, 1).map((q) => q.id);
+  })()`);
+  if (subjIds.length) {
+    await ev(`location.hash = '#/quiz/wrong?ids=${subjIds.join(',')}';`); await sleep(1500);
+  } else {
+    await ev(`location.hash = '#/chapter/${TEXT_CH}';`); await sleep(1300);
+    await ev(`(() => { const b=[...document.querySelectorAll('.btn')].find(x=>x.innerText.includes('开始顺序练习')); if(b)b.click(); })()`);
+    await sleep(1500);
+  }
   const subjBefore = await ev(`({
-    hasTextarea: Boolean(document.querySelector('.short-input, textarea')),
+    isText: Boolean(document.querySelector('.short-input, textarea')),
     hasOptions: document.querySelectorAll('.options .option').length,
     hasRevealBtn: [...document.querySelectorAll('.footer-bar .btn')].some(b=>b.innerText.includes('看解析')),
+    stem: (document.querySelector('.stem__text')||{}).innerText.slice(0, 30),
   })`);
-  check('主观题仍是文本框、无 ABCD 选项', subjBefore.hasTextarea && subjBefore.hasOptions === 0, JSON.stringify(subjBefore));
+  check('主观题是文本框、无 ABCD 选项', subjBefore.isText && subjBefore.hasOptions === 0, JSON.stringify(subjBefore));
+  check('主观题提供「看解析」按钮', subjBefore.hasRevealBtn, JSON.stringify(subjBefore));
   await ev(`(() => { const b=[...document.querySelectorAll('.footer-bar .btn')].find(x=>x.innerText.includes('看解析')); if(b)b.click(); })()`);
   await sleep(1100);
   const subjAfter = await ev(`({
@@ -297,12 +351,14 @@ async function main() {
     hasPoints: document.querySelectorAll('.points__item').length,
   })`);
   check('主观题不渲染选择题选项', subjAfter.analysisOptions === 0, `实际 ${subjAfter.analysisOptions}`);
-  check('主观题显示参考答案与评分提示', subjAfter.hasPoints > 0 || subjAfter.feedbackText.includes('参考'), subjAfter.feedbackText);
+  check('主观题显示参考答案与评分提示',
+    subjAfter.hasPoints > 0 || subjAfter.feedbackText.includes('参考') || subjAfter.feedbackText.includes('答案'),
+    subjAfter.feedbackText);
   await shot('94-subjective-unaffected');
 
   /* ---------- 手势：左右滑动切题 ---------- */
   console.log('\n[8] 左右滑动切换上/下一题');
-  await ev(`location.hash = '#/chapter/p1-1';`); await sleep(1200);
+  await ev(`location.hash = '#/chapter/${CHOICE_CH}';`); await sleep(1200);
   await ev(`(() => { const b=[...document.querySelectorAll('.btn')].find(x=>x.innerText.includes('开始顺序练习')); if(b)b.click(); })()`);
   await sleep(1500);
 
@@ -364,7 +420,7 @@ async function main() {
   check('竖向/斜向滑动不切题（避免与滚动冲突）', idx3 === idx2, `${idx2} → ${idx3}`);
 
   // 第一题右滑应停住并提示
-  await ev(`location.hash = '#/quiz/chapter/p1-1';`); await sleep(1400);
+  await ev(`location.hash = '#/quiz/chapter/${CHOICE_CH}';`); await sleep(1400);
   await swipe(140);
   const idx4 = await ev(readIndex);
   check('第一题继续右滑不会越界', idx4 === 1, `当前第 ${idx4} 题`);

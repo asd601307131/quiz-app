@@ -1,7 +1,7 @@
 /**
  * 科目导航与答题技巧视图。
  *
- *   #/subjects              两大板块入口（政治 / 英语）
+ *   #/subjects              板块入口
  *   #/subject/:id           科目详情：按分组列出章节
  *   #/strategy              答题技巧板块首页
  *   #/strategy/:id          技巧条目详情（内容讲解）

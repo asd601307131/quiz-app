@@ -1,7 +1,7 @@
 /**
  * 参考答案要点提取。
  *
- * 成考政治主观题的参考答案都是「踩点给分」，原文通常是：
+ * 主观题的参考答案常按「踩点给分」书写，原文通常是：
  *   (1)xxx；(2)yyy；①zzz；第一，……；一是……
  * 把这些要点抽出来单独展示，手机上更容易背，也更贴近阅卷逻辑。
  *
@@ -21,7 +21,7 @@
  *  - 「第X，」式后面同样必须紧跟文字。
  */
 const MARKER_AT_BOUNDARY =
-  /(?:^|[。；;！!？?：:，,、\s])(?:[（(]\s*\d{1,2}\s*[）)](?=[^\s。；;！!？?：:，,、])|[①②③④⑤⑥⑦⑧⑨⑩](?=[^\s。；;！!？?：:，,、])|第[一二三四五六七八九十]{1,3}[，,、](?=[^\s。；;！!？?：:，,、])|\d{1,2}\s*[.、](?!\s*[。；;，,、]))/g;
+  /(?:^|[。；;！!？?：:，,、\s])(?:[（(]\s*\d{1,2}\s*[）)](?=[^\s。；;！!？?：:，,、])|[①②③④⑤⑥⑦⑧⑨⑩](?=[^\s。；;！!？?：:，,、])|第[一二三四五六七八九十]{1,3}[，,、](?=[^\s。；;！!？?：:，,、])|\d{1,2}\s*[）)](?=[^\s。；;！!？?：:，,、])|\d{1,2}\s*[.、](?!\s*[。；;，,、]))/g;
 
 /**
  * 按要点标记切分文本。
@@ -100,21 +100,43 @@ export function extractPoints(text) {
   if (body.length < 40) return [];
 
   const segments = splitByMarkers(body);
-  if (segments.length < 2) return [];
+  if (segments.length >= 2) {
+    const points = segments
+      .filter((s) => !s.isLead)
+      .map((s) => stripMarker(s.text))
+      .filter(looksLikePoint);
 
-  const points = segments
-    .filter((s) => !s.isLead)
-    .map((s) => stripMarker(s.text))
-    .filter(looksLikePoint);
+    // 至少要有 2 个像样的要点，否则继续尝试按分号拆
+    if (points.length >= 2) {
+      // 单点过长（说明标记识别有误，把整段吞进来了）则放弃
+      const tooLong = points.filter((p) => p.length > 400);
+      if (tooLong.length <= points.length / 2) return points;
+    }
+  }
 
-  // 至少要有 2 个像样的要点，否则认为拆分失败
-  if (points.length < 2) return [];
+  // 兜底 1：没有编号，但用分号/分句把多个并列内容分开了，也按要点展示
+  const semis = body
+    .split(/[；;]/)
+    .map((s) => s.trim().replace(/^[，,、]\s*/, ''))
+    .filter((s) => s.length >= 6 && /[\u4e00-\u9fa5]/.test(s));
+  if (semis.length >= 2) return semis;
 
-  // 单点过长（说明标记识别有误，把整段吞进来了）则放弃
-  const tooLong = points.filter((p) => p.length > 400);
-  if (tooLong.length > points.length / 2) return [];
+  // 兜底 2：用逗号并列的排比式答案（如「…不放过，…不放过，…不放过」）
+  // 仅在分句较多且有明显重复结构时才拆，避免把普通长句拆碎
+  const clauses = body
+    .split(/[，,]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 6 && /[\u4e00-\u9fa5]/.test(s));
+  if (clauses.length >= 3) {
+    // 检查是否有重复的收尾词（如「不放过」「是」「的」），有才认为是并列排比
+    const tails = clauses.map((c) => c.slice(-3));
+    const repeated = tails.filter((t, i) => tails.indexOf(t) !== i);
+    if (repeated.length >= 2) {
+      return clauses.map((c) => (/[。；;]$/.test(c) ? c : `${c}。`));
+    }
+  }
 
-  return points;
+  return [];
 }
 
 /**
@@ -122,5 +144,5 @@ export function extractPoints(text) {
  * 判定依据是题型而非数据来源——教材真题与陕西真题都要拆。
  */
 export function shouldExtractPoints(type) {
-  return type === 'short' || type === 'judge' || type === 'fill';
+  return type === 'short' || type === 'judge' || type === 'fill' || type === 'essay';
 }

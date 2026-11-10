@@ -187,17 +187,26 @@ for (const file of files) {
 
     if (isChoice) {
       if (options.length < 2) addProblem(file, id, `选项不足（${options.length} 个）`);
-      if (!/^[A-E]$/.test(answer || '')) addProblem(file, id, `答案非法：「${answer}」`);
+      // 多选题答案是多字母组合（如 ABCD），单选是单字母；两者都合法
+      if (!/^[A-E]{1,5}$/.test(answer || '')) addProblem(file, id, `答案非法：「${answer}」`);
+      if (answer && new Set(answer.split('')).size !== answer.length) {
+        addProblem(file, id, `答案有重复字母：「${answer}」`);
+      }
       // 选项重复
       const seen = new Map();
       options.forEach((o) => seen.set(o, (seen.get(o) || 0) + 1));
       for (const [text, n] of seen) {
         if (n > 1) addProblem(file, id, `选项重复出现 ${n} 次：「${text.slice(0, 20)}」`);
       }
-      // 答案越界
-      const idx = (answer || '').charCodeAt(0) - 65;
-      if (idx >= 0 && idx >= options.length) {
-        addProblem(file, id, `答案 ${answer} 超出选项范围（${options.length} 个选项）`);
+      // 答案越界：逐个字母检查
+      const badLetters = (answer || '')
+        .split('')
+        .filter((L) => {
+          const i = L.charCodeAt(0) - 65;
+          return i < 0 || i >= options.length;
+        });
+      if (badLetters.length) {
+        addProblem(file, id, `答案 ${badLetters.join('')} 超出选项范围（${options.length} 个选项）`);
       }
       // 反向题检查
       if (/错误|不属于|不正确|不包括|无关/.test(stem) && !/的(是|为)|下列|以下/.test(stem)) {

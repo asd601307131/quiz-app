@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 判分与组卷引擎。
  * 纯函数，不依赖 DOM，可单独用于 Node 端自测。
  */
@@ -21,7 +21,7 @@ export const DIFFICULTIES = {
  *   fill     填空，按字符串匹配判分，支持多个可接受答案
  *   short    简答，无标准答案，不参与自动判分（只统计作答数）
  *   essay    论述，同简答处理（20 分大题，只看参考答案要点自评）
- *   judge    辨析题的「判断正误」步骤，选项是正确/错误，但要配合说明理由，算主观题
+ *   judge    判断题（正确/错误），判分算客观题，但不进组卷
  */
 export const TYPES = {
   single: { key: 'single', label: '单选题', objective: true },
@@ -29,7 +29,7 @@ export const TYPES = {
   fill: { key: 'fill', label: '填空题', objective: true },
   short: { key: 'short', label: '简答题', objective: false },
   essay: { key: 'essay', label: '论述题', objective: false },
-  judge: { key: 'judge', label: '辨析题', objective: false },
+  judge: { key: 'judge', label: '判断题', objective: true },
 };
 
 /** 兼容历史数据：judge 归一化为 single（判分层面等价），但 isObjective 另行排除 */
@@ -39,17 +39,26 @@ export function normalizeType(type) {
 }
 
 /**
- * 是否属于"可自动判分、可进考卷"的题型。
- * 判断题（辨析题的判断正误步骤）虽然选项形式是 A/B，但要配合说明理由作答，
- * 属于主观题范畴，因此排除在组卷之外。
+ * 是否属于"可自动判分"的题型（用于算分分母、即时反馈）。
+ * 判断题（正确/错误）有明确答案，判分时算客观题。
  */
 export function isObjective(question) {
   const type = typeof question === 'string' ? question : question && question.type;
-  if (type === 'judge') return false;
   return TYPES[normalizeType(type)].objective;
 }
 
-/** 是否为主观题（简答 / 论述 / 辨析理由）——这些只作为解析与得分点参考 */
+/**
+ * 是否允许进入「随机组卷 / 模拟考试」。
+ * 判断题虽然可自动判分，但辨析类题型需要配合说明理由作答，
+ * 因此不进考卷——但判分、错题本、即时反馈仍按客观题处理。
+ */
+export function isPaperEligible(question) {
+  const type = typeof question === 'string' ? question : question && question.type;
+  if (type === 'judge') return false;
+  return isObjective(question);
+}
+
+/** 是否为主观题（简答 / 论述 / 辨析理由）——只作为解析与得分点参考 */
 export function isSubjective(question) {
   return !isObjective(question);
 }
@@ -148,7 +157,7 @@ export function buildPaper(pool, opts = {}) {
 
   if (onlyObjective) {
     // 练习/考试卷只出客观题（简答、论述主观题不参与组卷）
-    candidates = candidates.filter((q) => isObjective(q));
+    candidates = candidates.filter((q) => isPaperEligible(q));
   }
 
   if (seedQuestions && seedQuestions.length) {
@@ -170,17 +179,17 @@ export function buildPaper(pool, opts = {}) {
 }
 
 /**
- * 考卷模块顺序：真卷里选择题的模块排列几乎固定。
- * 见用户提供的考情分析：1—10 马哲、11—16 毛泽东思想、17—20 邓小平理论等、
- * 21—30 习近平新时代、31—35 时事政治。
+ * 考卷模块顺序与配比。
+ * 按电工技能等级认定的常规命题结构设定：
+ *   电工基础占比最大，其次是自动化控制与电机变压器，
+ *   电气安全与职业素养作为必得分放在后面。
  */
 export const PAPER_MODULES = [
-  { key: '马哲', label: '马克思主义哲学', quota: 10, prefix: ['p1-'] },
-  { key: '毛泽东思想', label: '毛泽东思想', quota: 6, prefix: ['p2-1', 'p2-2', 'p2-3', 'p2-4'] },
-  { key: '邓小平理论等', label: '邓小平理论、"三个代表"、科学发展观', quota: 4, prefix: ['p2-5', 'p3-3', 'p3-4'] },
-  { key: '习近平新时代', label: '习近平新时代中国特色社会主义思想', quota: 10, prefix: ['p3-5', 'p3-6', 'p3-7', 'p3-8', 'p2-6', 'p2-7', 'p2-8', 'p2-9', 'p2-10', 'p2-11'] },
-  // 真卷第 31~35 题固定为时事政治
-  { key: '时政', label: '时事政治', quota: 5, prefix: ['current'] },
+  { key: '电工基础', label: '电工基础', quota: 12, prefix: ['elec-basic'] },
+  { key: '电机与变压器', label: '电机与变压器', quota: 8, prefix: ['elec-machine'] },
+  { key: '自动化与控制', label: '自动化与控制', quota: 10, prefix: ['elec-auto'] },
+  { key: '电气安全', label: '电气安全', quota: 6, prefix: ['elec-safety'] },
+  { key: '职业素养', label: '职业素养', quota: 4, prefix: ['elec-ethics'] },
 ];
 
 /** 判断某章节属于哪个模块（按 PAPER_MODULES 顺序匹配） */
@@ -206,7 +215,7 @@ export function moduleOfQuestion(q) {
 /**
  * 按真卷模块结构组卷：模块顺序固定，题量按各模块在真卷中的占比分配。
  *
- * 真卷配比（35 道）：马哲 10、毛泽东思想 6、邓小平理论等 4、习近平新时代 10、时政 5。
+ * 配比见下方 PAPER_MODULES（电工基础 12 / 电机 8 / 自动化 10 / 安全 6 / 素养 4）。
  * 某模块题量不足时，缺口由其他模块补齐，但**最终仍按模块顺序排列**，
  * 保证卷面结构与真卷一致（不会出现"做着做着又回到马哲"）。
  *
@@ -214,7 +223,7 @@ export function moduleOfQuestion(q) {
  * @param {number} count 总题量
  */
 export function buildStructuredPaper(pool, count = 35) {
-  const objective = pool.filter((q) => isObjective(q));
+  const objective = pool.filter((q) => isPaperEligible(q));
 
   // 先按模块分桶（题目自带的 module 字段优先，其次按章节推断）
   const buckets = new Map();
@@ -266,7 +275,7 @@ export function buildStructuredPaper(pool, count = 35) {
 /**
  * 各题型的建议作答时长（分钟）。
  *
- * 依据：陕西成考专升本政治 150 分钟的题型配比反推——
+ * 依据：电工等级认定理论考试的常见题型与作答量估算——
  *   选择题（35 题）+ 简答（4 题）+ 论述（2 题）= 150 分钟
  *   选择 35×2 = 70 分钟，主观 4×10 + 2×18 = 76 分钟，合计约 146 分钟
  * 练习模式下每题还要读解析，所以取值偏宽松一点点。
