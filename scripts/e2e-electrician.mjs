@@ -184,6 +184,57 @@ async function main() {
   check('判断题可进入（若本章有判断）', judge.typeLabel.includes('判断') || judge.options.length > 0,
     `${judge.typeLabel} 选项=${JSON.stringify(judge.options)}`);
 
+  console.log('\n[6b] 五种题型全部可用（单选/多选/判断/简答/论述）');
+  const typeCheck = await ev(`(async () => {
+    const m = await import('./src/data/questions.js');
+    const e = await import('./src/core/engine.js');
+    const out = {};
+    for (const t of ['single', 'multiple', 'judge', 'short', 'essay']) {
+      out[t] = {
+        count: m.QUESTIONS.filter((q) => q.type === t).length,
+        label: e.typeLabel(t),
+        objective: e.isObjective(t),
+        paper: e.isPaperEligible(t),
+        textInput: e.isTextInput(t),
+      };
+    }
+    return out;
+  })()`);
+  check('题库包含 5 种题型且都有题',
+    ['single', 'multiple', 'judge', 'short', 'essay'].every((t) => typeCheck[t].count > 0),
+    Object.entries(typeCheck).map(([k, v]) => `${k}:${v.count}`).join(' '));
+  check('题型名称正确',
+    typeCheck.single.label === '单选题' && typeCheck.multiple.label === '多选题'
+      && typeCheck.judge.label === '判断题' && typeCheck.short.label === '简答题'
+      && typeCheck.essay.label === '论述题',
+    Object.values(typeCheck).map((v) => v.label).join('/'));
+  check('判断题不再被显示成单选题', typeCheck.judge.label === '判断题', typeCheck.judge.label);
+  check('单选/多选/判断可自动判分',
+    typeCheck.single.objective && typeCheck.multiple.objective && typeCheck.judge.objective);
+  check('简答/论述为主观题',
+    !typeCheck.short.objective && !typeCheck.essay.objective);
+  check('单选/多选/判断可进练习与考卷',
+    typeCheck.single.paper && typeCheck.multiple.paper && typeCheck.judge.paper,
+    JSON.stringify({ s: typeCheck.single.paper, m: typeCheck.multiple.paper, j: typeCheck.judge.paper }));
+  check('简答/论述不进考卷',
+    !typeCheck.short.paper && !typeCheck.essay.paper);
+  check('简答/论述用文本框作答',
+    typeCheck.short.textInput && typeCheck.essay.textInput);
+
+  // 论述题实际渲染：必须有输入框
+  const essayIds = await ev(`(async () => {
+    const m = await import('./src/data/questions.js');
+    return m.QUESTIONS.filter((q) => q.type === 'essay').slice(0, 1).map((q) => q.id);
+  })()`);
+  await ev(`location.hash = '#/quiz/wrong?ids=${essayIds.join(',')}';`); await sleep(1500);
+  const essayView = await ev(`({
+    hasTextarea: Boolean(document.querySelector('.text-input, textarea')),
+    options: document.querySelectorAll('.options .option').length,
+    labels: [...document.querySelectorAll('.stem__head .tag')].map(t => t.innerText.trim()),
+  })`);
+  check('论述题渲染出作答文本框', essayView.hasTextarea, JSON.stringify(essayView));
+  check('论述题不渲染 ABCD 选项', essayView.options === 0, `选项数=${essayView.options}`);
+
   console.log('\n[7] 模拟考试结构');
   await ev(`location.hash = '#/setup/exam';`); await sleep(1300);
   const setup = await ev(`({
@@ -203,7 +254,8 @@ async function main() {
     return { count: sess.questions.length, chapters, types, duration: sess.durationSec };
   })()`);
   check('考试卷 40 题', exam.count === 40, `实际 ${exam.count}`);
-  check('卷内无判断/主观题', Array.isArray(exam.types) && exam.types.every(t=>t==='single'||t==='multiple'), JSON.stringify(exam.types));
+  check('卷内不含主观题（简答/论述）', Array.isArray(exam.types) && !exam.types.includes('short') && !exam.types.includes('essay'), JSON.stringify(exam.types));
+  check('判断题可进考卷', Array.isArray(exam.types) && exam.types.includes('judge'), JSON.stringify(exam.types));
   check('覆盖多个章节', Array.isArray(exam.chapters) && exam.chapters.length >= 4, JSON.stringify(exam.chapters));
   check('限时 60 分钟', exam.duration === 3600, `${exam.duration} 秒`);
   await shot('A4-exam');

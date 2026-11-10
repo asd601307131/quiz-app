@@ -41,7 +41,7 @@ export function __resetQuiz() {
   state.endSession();
 }
 
-/** 单选/判断题的展示顺序（考试模式下可打乱）；填空/简答题没有选项，返回空数组 */
+/** 选项题的展示顺序（考试模式下可打乱）；文字题没有选项，返回空数组 */
 function makeOptionOrder(question, shuffleOptions) {
   if (!Array.isArray(question.options) || !question.options.length) return [];
   const letters = question.options.map((_, i) => engine.LETTERS[i]);
@@ -321,7 +321,7 @@ function selectOption(session, question, letter) {
   // 关闭自动跳转时不再弹 toast：解析区已经清晰标出对错，弹窗会遮住选项
 }
 
-/** 填空题/简答题：输入变化先存进会话（不重渲染，避免输入框失焦） */
+/** 文字题（简答/论述）：输入变化先存进会话（不重渲染，避免输入框失焦） */
 function onTextChange(session, question, value) {
   if (session.revealed[question.id]) return;
   engine.setAnswer(session, question.id, value, question);
@@ -333,11 +333,11 @@ function onTextChange(session, question, value) {
   }
 }
 
-/** 填空题/简答题：点击「确认答案」后判分或标记待自评 */
+/** 文字题（简答/论述）：点击「确认答案」后标记待自评 */
 function confirmText(session, question) {
   const raw = session.answers[question.id];
   if (!engine.hasAnswer(raw)) {
-    toast(question.type === 'fill' ? '请先填写答案' : '请先作答');
+    toast('请先作答');
     return;
   }
 
@@ -416,31 +416,21 @@ function masteryRow(q) {
   ]);
 }
 
-/** 填空题输入框 */
-function fillInput(session, question) {
+/** 文字题（简答 / 论述）作答框 */
+function textInput(session, question) {
   const value = typeof session.answers[question.id] === 'string' ? session.answers[question.id] : '';
-  const input = h('input.input.fill-input', {
-    type: 'text',
-    value,
-    placeholder: '在此填写答案',
-    autocomplete: 'off',
-    disabled: Boolean(session.revealed[question.id]),
-    oninput: (e) => onTextChange(session, question, e.target.value),
-  });
-  return h('div.fill-box', null, [input]);
-}
-
-/** 简答题文本框 */
-function shortInput(session, question) {
-  const value = typeof session.answers[question.id] === 'string' ? session.answers[question.id] : '';
-  const area = h('textarea.input.short-input', {
-    rows: '5',
-    placeholder: '在此作答（简答题不自动判分，交卷后可与参考答案自行对照）',
+  const isEssay = engine.normalizeType(question.type) === 'essay';
+  const placeholder = isEssay
+    ? '在此作答（论述题不自动判分，可先列要点，再对照参考答案自评）'
+    : '在此作答（简答题不自动判分，交卷后可与参考答案自行对照）';
+  const area = h('textarea.input.text-input', {
+    rows: isEssay ? '7' : '5',
+    placeholder,
     disabled: Boolean(session.revealed[question.id]),
     oninput: (e) => onTextChange(session, question, e.target.value),
   });
   area.value = value;
-  return h('div.fill-box', null, [area]);
+  return h('div.text-box', null, [area]);
 }
 
 function rerender() {
@@ -468,7 +458,7 @@ function renderQuiz() {
   const isExam = session.mode === 'exam';
   const revealed = Boolean(session.revealed[q.id]);
   const qType = engine.normalizeType(q.type);
-  const isTextType = qType === 'fill' || qType === 'short';
+  const isTextType = engine.isTextInput(q);
   const userAnswer = isTextType ? [] : engine.normalizeAnswer(session.answers[q.id]);
   const myText = typeof session.answers[q.id] === 'string' ? session.answers[q.id] : '';
   const opts = Array.isArray(q.options) ? q.options : [];
@@ -541,11 +531,7 @@ function renderQuiz() {
       tag(engine.DIFFICULTIES[q.difficulty].label, engine.DIFFICULTIES[q.difficulty].color),
     ]),
     h('div.stem__text', { text: q.stem }),
-    isTextType
-      ? qType === 'fill'
-        ? fillInput(session, q)
-        : shortInput(session, q)
-      : h('div.options', null, optionNodes),
+    isTextType ? textInput(session, q) : h('div.options', null, optionNodes),
   ]);
 
   let feedbackNode = null;
@@ -569,11 +555,8 @@ function renderQuiz() {
         masteryRow(q),
       ]);
     } else {
-      const mine = qType === 'fill' ? myText : userAnswer.join('、');
-      const rightText =
-        qType === 'fill'
-          ? (Array.isArray(q.answer) ? q.answer.join(' / ') : String(q.answer))
-          : engine.normalizeAnswer(q.answer).join('、');
+      const mine = myText;
+      const rightText = engine.normalizeAnswer(q.answer).join('、');
       feedbackNode = h(`div.feedback.feedback--${ok ? 'right' : 'wrong'}`, null, [
         h('div.feedback__title', { text: ok ? '✅ 回答正确' : '❌ 回答错误' }),
         // 选择类：把四个选项再列一遍，用文字颜色 + 标签标清楚
@@ -591,9 +574,9 @@ function renderQuiz() {
 
   const isLast = session.currentIndex >= total - 1;
   const hasMyAnswer = isTextType ? Boolean(myText.trim()) : userAnswer.length > 0;
-  // 多选/填空/简答：练习模式下需要先「确认答案」再看结果
+  // 多选与文字题：练习模式下需要先「确认答案」再看结果
   // （这一类题目旁边同时提供「看解析」，允许跳过作答直接看参考答案）
-  const needConfirm = !isExam && !revealed && (qType === 'multiple' || qType === 'fill' || qType === 'short');
+  const needConfirm = !isExam && !revealed && (qType === 'multiple' || isTextType);
 
   const footerButtons = [
     h('button.btn.btn--ghost', {
@@ -999,11 +982,11 @@ function optionAnalysisList(q, userAnswer) {
   );
 }
 
-/** 主观题（简答/论述/辨析理由/填空）的参考答案块 */
+/** 主观题（简答/论述）的参考答案块 */
 function subjectiveAnswerNode(q, userText, fallbackAnswer) {
   const points = Array.isArray(q.points) ? q.points : [];
   const mine = String(userText || '').trim();
-  // 填空题的可接受答案在 q.answer 里，简答/论述在 q.answerText 里
+  // 简答/论述的参考答案在 q.answerText 里
   const refText =
     q.answerText ||
     (Array.isArray(q.answer) && q.answer.length ? q.answer.join(' / ') : '') ||
@@ -1038,18 +1021,13 @@ function analysisItem(d, index, session) {
   const mine = engine.formatAnswer(q, d.userAnswer) || '未作答';
 
   // 简答题无自动判分，展示参考答案并标记为待自评
-  const pending = d.pending || type === 'short';
-  const right =
-    type === 'short'
-      ? q.answerText || '（未提供参考答案）'
-      : type === 'fill'
-        ? Array.isArray(d.rightAnswer)
-          ? d.rightAnswer.join(' / ')
-          : String(d.rightAnswer || '')
-        : engine.normalizeAnswer(d.rightAnswer).join('、');
+  const pending = d.pending || engine.isSubjective(q);
+  const right = engine.isSubjective(q)
+    ? q.answerText || '（未提供参考答案）'
+    : engine.normalizeAnswer(d.rightAnswer).join('、');
 
-  // 选项列表：选择类题目**完整列出四个选项**并标注颜色与标签
-  const isChoice = type === 'single' || type === 'multiple';
+  // 选项列表：选项类题目（单选/多选/判断）完整列出全部选项并标注颜色与标签
+  const isChoice = engine.isChoiceInput(q);
   const optionsNode = isChoice ? optionAnalysisList(q, d.userAnswer || []) : null;
 
   return h('div.analysis-item', null, [
@@ -1129,7 +1107,7 @@ export function ReviewView({ id, query = {} }) {
 
   const item = store.getWrongBook().find((w) => w.questionId === id);
   const qType = engine.normalizeType(q.type);
-  const isTextType = qType === 'fill' || qType === 'short';
+  const isTextType = engine.isTextInput(q);
   const rightText = isTextType
     ? Array.isArray(q.answer)
       ? q.answer.join(' / ')
@@ -1161,7 +1139,7 @@ export function ReviewView({ id, query = {} }) {
         : h('div.feedback__line', null, [h('b.correct-option-text', { text: rightText })]),
       item
         ? h('div.feedback__line', null, [
-            qType === 'short' || qType === 'fill' ? '你上次填写：' : '你上次选择了：',
+            isTextType ? '你上次填写：' : '你上次选择了：',
             h('b', { text: engine.formatAnswer(q, item.lastAnswer) || '未作答' }),
           ])
         : null,

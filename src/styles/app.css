@@ -1101,18 +1101,12 @@ ol {
   line-height: 1.6;
 }
 
-/* 填空 / 简答 答题区 */
-.fill-box {
+/* 文字题（简答 / 论述）答题区 */
+.text-box {
   margin-top: 14px;
 }
 
-.fill-input {
-  height: 48px;
-  font-size: 1rem;
-  border-width: 1.5px;
-}
-
-.short-input {
+.text-input {
   width: 100%;
   min-height: 128px;
   padding: 12px 14px;
@@ -1125,12 +1119,11 @@ ol {
   transition: border-color 0.15s;
 }
 
-.short-input:focus {
+.text-input:focus {
   border-color: var(--c-primary);
 }
 
-.fill-input:disabled,
-.short-input:disabled {
+.text-input:disabled {
   background: var(--c-bg);
   color: var(--c-text-2);
 }

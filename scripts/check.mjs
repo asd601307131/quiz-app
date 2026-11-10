@@ -20,8 +20,9 @@ function check(name, condition, detail = '') {
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 // essay（论述）与 short（简答）都是主观题，分值与作答要求不同，必须分开保留
-const TYPES = ['single', 'multiple', 'judge', 'fill', 'short', 'essay'];
+const TYPES = ['single', 'multiple', 'judge', 'short', 'essay'];
 const CHOICE_TYPES = ['single', 'multiple', 'judge'];
+const TEXT_TYPES = ['short', 'essay'];
 const DIFFS = ['easy', 'medium', 'hard'];
 
 console.log('\n[1] 题库结构');
@@ -57,7 +58,7 @@ for (const q of QUESTIONS) {
     structDetail = `${q.id} 缺少解析`;
     break;
   }
-  // 选项题必须有两个以上纯文本选项；填空/简答题不需要 options
+  // 选项题必须有两个以上纯文本选项；文字题（简答/论述）不需要 options
   if (CHOICE_TYPES.includes(q.type)) {
     if (!Array.isArray(q.options) || q.options.length < 2) {
       structOk = false;
@@ -88,18 +89,13 @@ let answerDetail = '';
 for (const q of QUESTIONS) {
   const ans = q.answer;
 
-  if (q.type === 'fill') {
-    const list = Array.isArray(ans) ? ans : [ans];
-    if (!list.length || list.some((a) => typeof a !== 'string' || !a.trim())) {
+  if (TEXT_TYPES.includes(q.type)) {
+    // 简答 / 论述不自动判分，参考答案放在 answerText
+    if (typeof q.answerText !== 'string' || !q.answerText.trim()) {
       answerOk = false;
-      answerDetail = `${q.id} 填空题答案必须是至少一个非空字符串`;
+      answerDetail = `${q.id} 文字题缺少参考答案 answerText`;
       break;
     }
-    continue;
-  }
-
-  if (q.type === 'short' || q.type === 'essay') {
-    // 简答 / 论述不自动判分，answer 可省略
     continue;
   }
 
@@ -175,8 +171,8 @@ check(
         q.options[1] === '错误')
   )
 );
-// 填空/简答题为可选能力：题库里还没有时不算失败，但要有的话必须合法
-check('填空/简答题（若存在）合法', QUESTIONS.filter((q) => q.type === 'fill' || q.type === 'short').every((q) => Boolean(q.analysis)));
+// 文字题为可选能力：题库里还没有时不算失败，但要有的话必须合法
+check('文字题（简答/论述）均带解析', QUESTIONS.filter((q) => TEXT_TYPES.includes(q.type)).every((q) => Boolean(q.analysis)));
 check('三种难度齐备', DIFFS.every((d) => QUESTIONS.some((q) => q.difficulty === d)));
 check(
   '章节统计与题目一致',
@@ -211,6 +207,8 @@ const {
   formatAnswer,
   normalizeType,
   isObjective,
+  isPaperEligible,
+  isTextInput,
   typeLabel,
 } = await import('../src/core/engine.js');
 
@@ -237,75 +235,62 @@ check('多选题全选判对', isCorrect(multi, multi.answer.slice().reverse()))
 check('空答案判错', !isCorrect(single, []));
 check('null 答案判错', !isCorrect(single, null));
 
-/* ---- 填空题 / 简答题 ---- */
+/* ---- 文字题（简答 / 论述） ---- */
 
-console.log('\n[3b] 填空与简答题');
-
-const fillQ = {
-  id: 'fixture-fill',
-  type: 'fill',
-  stem: '判断数组的方法是什么？',
-  answer: ['Array.isArray', 'Array.isArray()'],
-  analysis: '用 Array.isArray 判断。',
-};
-
-check('填空题正确答案判对', isCorrect(fillQ, 'Array.isArray'));
-check('填空题忽略大小写', isCorrect(fillQ, 'array.isarray'));
-check('填空题忽略首尾空格', isCorrect(fillQ, '  Array.isArray  '));
-check('填空题忽略全角括号差异', isCorrect(fillQ, 'Array.isArray（）'));
-check('填空题多个可接受答案', isCorrect(fillQ, 'Array.isArray()'));
-check('填空题错误答案判错', !isCorrect(fillQ, 'typeof'));
-check('填空题空答案判错', !isCorrect(fillQ, ''));
-
-check('normalizeText 去空白与标点', normalizeText(' A b, c。 ') === 'abc');
-check('normalizeText 全角转半角', normalizeText('ＡＢＣ') === 'abc');
+console.log('\n[3b] 简答与论述题');
 
 const shortQ = {
   id: 'fixture-short',
   type: 'short',
   stem: '请简述事件循环。',
   answerText: '宏任务 -> 微任务 -> 渲染。',
-  analysis: '先清空微任务再渲染。',
+  analysis: '考查事件循环的宏任务与微任务顺序。',
 };
 
-check('简答题不参与自动判分', !isCorrect(shortQ, '宏任务 -> 微任务 -> 渲染。'));
-check('简答题标记为非客观题', !isObjective('short'));
-check('填空题标记为客观题', isObjective('fill'));
+check('简答题无法自动判分', !isCorrect(shortQ, '宏任务'));
+check('简答题标记为主观题', !isObjective(shortQ));
+check('简答题不进组卷', !isPaperEligible(shortQ));
+check('简答题使用文本框作答', isTextInput(shortQ));
+check('简答题显示名正确', typeLabel('short') === '简答题');
 
-check('normalizeType 把 judge 归一化为 single', normalizeType('judge') === 'single');
-check('判断题显示名仍为判断题', typeLabel('judge') === '单选题' && typeLabel('fill') === '填空题');
+const essayQ = {
+  id: 'fixture-essay',
+  type: 'essay',
+  stem: '试述安全生产的意义。',
+  answerText: '一、保障人身安全；二、保障设备安全。',
+  analysis: '论述题按要点给分。',
+};
 
-const textSession = createSession({ mode: 'practice', questions: [fillQ, shortQ] });
-check('未作答时 hasAnswer 为假', !hasAnswer(textSession.answers[fillQ.id]));
-setAnswer(textSession, fillQ.id, 'Array.isArray', fillQ);
-check('填空题答案以字符串保存', textSession.answers[fillQ.id] === 'Array.isArray');
-check('填空题作答计入已答', hasAnswer(textSession.answers[fillQ.id]) && answeredCount(textSession) === 1);
-setAnswer(textSession, fillQ.id, '   ', fillQ);
-check('填空题只填空格视为未作答', !hasAnswer(textSession.answers[fillQ.id]));
+check('论述题无法自动判分', !isCorrect(essayQ, '保障人身安全'));
+check('论述题标记为主观题', !isObjective(essayQ));
+check('论述题不进组卷', !isPaperEligible(essayQ));
+check('论述题使用文本框作答', isTextInput(essayQ));
+check('论述题显示名正确', typeLabel('essay') === '论述题');
 
-setAnswer(textSession, shortQ.id, '先执行宏任务，再清空微任务', shortQ);
-check('简答题答案以字符串保存', typeof textSession.answers[shortQ.id] === 'string');
-check('formatAnswer 原样返回文本答案', formatAnswer(fillQ, 'Array.isArray') === 'Array.isArray');
-check('formatAnswer 选项答案用顿号连接', formatAnswer(single, ['A', 'C']) === 'A、C');
+check('normalizeText 去空白与标点', normalizeText(' A b, c。 ') === 'abc');
+check('normalizeText 全角转半角', normalizeText('ＡＢＣ') === 'abc');
 
-/* ---- 含简答题的整卷判分 ---- */
+/* ---- 含主观题的整卷判分 ---- */
 
-const mixedPaper = [single, multi, fillQ, shortQ];
+const mixedPaper = [single, multi, shortQ, essayQ];
 const mixedSession = createSession({ mode: 'exam', questions: mixedPaper });
 setAnswer(mixedSession, single.id, single.answer, single);
 setAnswer(mixedSession, multi.id, multi.answer, multi);
-setAnswer(mixedSession, fillQ.id, 'Array.isArray', fillQ);
 setAnswer(mixedSession, shortQ.id, '随便答一点', shortQ);
+setAnswer(mixedSession, essayQ.id, '再随便答一点', essayQ);
 const mixedResult = gradeSession(mixedSession, { recordToStore: false });
-check('简答题不拉低总分（客观题全对得 100）', mixedResult.score === 100, `实际 ${mixedResult.score}`);
-check('简答题计入 pending', mixedResult.pending === 1, `pending=${mixedResult.pending}`);
-check('客观题满分为 3 题', mixedResult.objectiveTotal === 3, `objectiveTotal=${mixedResult.objectiveTotal}`);
+check('主观题不拉低总分（客观题全对得 100）', mixedResult.score === 100, `实际 ${mixedResult.score}`);
+check('主观题计入 pending', mixedResult.pending === 2, `pending=${mixedResult.pending}`);
+check('客观题满分为 2 题', mixedResult.objectiveTotal === 2, `objectiveTotal=${mixedResult.objectiveTotal}`);
 check('正确率按客观题计算', mixedResult.accuracy === 100, `accuracy=${mixedResult.accuracy}`);
 check(
   '明细里保留简答题文本答案',
   mixedResult.detail.find((d) => d.questionId === shortQ.id).userAnswer === '随便答一点'
 );
-check('明细里保留填空题文本答案', mixedResult.detail.find((d) => d.questionId === fillQ.id).userAnswer === 'Array.isArray');
+check(
+  '明细里保留论述题文本答案',
+  mixedResult.detail.find((d) => d.questionId === essayQ.id).userAnswer === '再随便答一点'
+);
 
 console.log('\n[4] 组卷与交卷');
 

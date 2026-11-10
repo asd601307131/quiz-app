@@ -144,5 +144,5 @@ export function extractPoints(text) {
  * 判定依据是题型而非数据来源——教材真题与陕西真题都要拆。
  */
 export function shouldExtractPoints(type) {
-  return type === 'short' || type === 'judge' || type === 'fill' || type === 'essay';
+  return type === 'short' || type === 'essay' || type === 'judge';
 }

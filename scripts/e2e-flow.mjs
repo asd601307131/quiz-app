@@ -169,7 +169,7 @@ async function main() {
   }
 
   const beforeReveal = await evaluate(`({
-    isText: Boolean(document.querySelector('.short-input, .fill-input')),
+    isText: Boolean(document.querySelector('.text-input, textarea')),
     hasRevealBtn: [...document.querySelectorAll('.footer-bar .btn')].some((b) => b.innerText.includes('看解析')),
     hasConfirm: [...document.querySelectorAll('.footer-bar .btn')].some((b) => b.innerText.includes('确认答案')),
     options: document.querySelectorAll('.option').length,
@@ -297,8 +297,8 @@ async function main() {
   check('卷内章节全部属于本板块',
     (sessionCheck.chapters || []).every((c) => subjMeta.chapters.includes(c)),
     `章节=${(sessionCheck.chapters || []).join(',')}`);
-  check('卷内只有客观题（单选/多选）',
-    (sessionCheck.types || []).every((t) => t === 'single' || t === 'multiple'),
+  check('卷内只有客观题（单选/多选/判断）',
+    (sessionCheck.types || []).every((t) => ['single', 'multiple', 'judge'].includes(t)),
     JSON.stringify(sessionCheck.types));
   await shot('86-exam-one-subject');
 

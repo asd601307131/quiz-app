@@ -302,8 +302,9 @@ async function main() {
     anchoredLabels: [...document.querySelectorAll('.analysis-item[data-anchor="1"] .option__labels .tag')].map(t=>t.innerText.trim()),
   })`);
   check('已交卷点题号 → 结果页且未跳主页', !s2.isHome && s2.hash.includes('result'), s2.hash);
-  check('结果页定位到目标题并显示 4 个选项',
-    s2.anchored && s2.anchoredOptions === 4,
+  // 判断题只有「正确/错误」2 个选项，单选 4 个，因此按 ≥2 判断
+  check('结果页定位到目标题并列出全部选项',
+    s2.anchored && s2.anchoredOptions >= 2,
     `定位=${s2.anchored} 选项数=${s2.anchoredOptions}`);
   check('定位题带颜色标签', s2.anchoredLabels.length > 0, s2.anchoredLabels.join('/'));
   await shot('92-sheet-to-result-question');
@@ -336,7 +337,7 @@ async function main() {
     await sleep(1500);
   }
   const subjBefore = await ev(`({
-    isText: Boolean(document.querySelector('.short-input, textarea')),
+    isText: Boolean(document.querySelector('.text-input, textarea')),
     hasOptions: document.querySelectorAll('.options .option').length,
     hasRevealBtn: [...document.querySelectorAll('.footer-bar .btn')].some(b=>b.innerText.includes('看解析')),
     stem: (document.querySelector('.stem__text')||{}).innerText.slice(0, 30),

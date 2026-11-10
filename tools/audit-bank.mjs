@@ -153,7 +153,6 @@ for (const file of files) {
     const type = g('type');
     const isChoice = /单选|多选/.test(type);
     const isJudge = /判断/.test(type);
-    const isFill = /填空/.test(type);
     // 论述也是主观题，必须一并识别，否则会误报「题型无法识别」
     const isShort = /简答|问答|论述/.test(type);
 
@@ -214,10 +213,8 @@ for (const file of files) {
       }
     } else if (isJudge) {
       if (!/^[AB]$/.test(answer || '')) addProblem(file, id, `判断题答案应为 A/B，实际「${answer}」`);
-    } else if (isFill) {
-      if (!answer) addProblem(file, id, '填空题缺少答案');
     } else if (isShort) {
-      if (!answerText) addProblem(file, id, '简答题缺少 answerText 参考答案');
+      if (!answerText) addProblem(file, id, '主观题缺少 answerText 参考答案');
     } else {
       addProblem(file, id, `题型无法识别：「${type}」`);
     }

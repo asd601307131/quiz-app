@@ -5,8 +5,8 @@
  *   single   单选：options[string[]] + answer[string[]]（字母）
  *   multiple 多选：同上，answer 多项，全对才得分
  *   judge    判断：options 固定 ['正确','错误']，answer 为 ['A'](对) 或 ['B'](错)
- *   fill     填空：answer 为可接受答案数组，命中任一即算对
  *   short    简答：answerText 为参考答案，不自动判分
+ *   essay    论述：answerText 为参考答案，不自动判分
  *
  * 修改题库请改源表格后重新运行导入脚本，不要直接手改本文件。
  */
@@ -4024,6 +4024,6 @@ export const TYPE_LABEL = {
   single: '单选题',
   multiple: '多选题',
   judge: '判断题',
-  fill: '填空题',
   short: '简答题',
+  essay: '论述题',
 };

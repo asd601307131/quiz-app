@@ -12,14 +12,14 @@
  *   optionA..optionE  answer  answerText  analysis  tags
  *
  * 题型的写法很宽松：单选/single/1、多选/multiple/2、判断/judge/tf、
- * 填空/fill/blank、简答/short/essay 都能识别。
+ * 单选/多选/判断/简答/论述 都能识别。
  * 难度：简单/easy/易、中等/medium/中、困难/hard/难。
  *
  * 答案列的写法：
  *   单选题答案       A  或 a  或 1
  *   多选题答案       ABC / A,B,D / A、B、D / A B D 都可以
  *   判断题答案       对/错、正确/错误、T/F、√/×
- *   填空题答案       多个可接受答案用 | 分隔，例如  预防为主|预防为主，
+ *   主观题答案       写在 answerText 列（简答与论述都要填）
  *   简答题参考答案   写在 answerText 列（不自动判分）
  */
 
@@ -142,10 +142,9 @@ const TYPE_ALIASES = {
   单选: 'single', 单选题: 'single', single: 'single', radio: 'single', 1: 'single', 一: 'single',
   多选: 'multiple', 多选题: 'multiple', multiple: 'multiple', checkbox: 'multiple', 2: 'multiple', 二: 'multiple',
   判断: 'judge', 判断题: 'judge', judge: 'judge', tf: 'judge', truefalse: 'judge', 3: 'judge',
-  填空: 'fill', 填空题: 'fill', fill: 'fill', blank: 'fill', 4: 'fill',
-  简答: 'short', 简答题: 'short', short: 'short', 问答: 'short', 5: 'short',
-  // 论述是独立题型（20 分大题），不能并进简答
-  论述: 'essay', 论述题: 'essay', essay: 'essay', 6: 'essay',
+  // 说明：题库只保留 5 类题型（单选/多选/判断/简答/论述），填空题已不再支持
+  简答: 'short', 简答题: 'short', short: 'short', 问答: 'short', 4: 'short',
+  论述: 'essay', 论述题: 'essay', essay: 'essay', 5: 'essay',
 };
 
 const DIFF_ALIASES = {
@@ -176,9 +175,6 @@ function parseType(raw, options) {
   const key = normKey(raw);
   if (TYPE_ALIASES[key]) return TYPE_ALIASES[key];
 
-  // 推断：没有选项列 → 有 answerText 则简答，否则填空
-  if (!options.length) return 'fill';
-
   // 两个选项且是 正确/错误 → 判断
   if (
     options.length === 2 &&
@@ -188,7 +184,8 @@ function parseType(raw, options) {
     return 'judge';
   }
 
-  return options.length ? null : 'fill';
+  // 有选项 → 单选；没有选项也没写类型 → 无法判断，交给上层报错
+  return options.length ? 'single' : null;
 }
 
 function parseDifficulty(raw) {
@@ -234,17 +231,6 @@ function parseJudgeAnswer(raw) {
   if (key === 'a') return { list: ['A'], error: null };
   if (key === 'b') return { list: ['B'], error: null };
   return { list: [], error: `判断题答案「${raw}」无法识别，请填写 对/错 或 正确/错误` };
-}
-
-/** 解析填空题答案 -> 字符串数组（| 或 ; 分隔） */
-function parseFillAnswer(raw) {
-  const text = String(raw || '').trim();
-  if (!text) return { list: [], error: '缺少答案' };
-  const list = text
-    .split(/[|；;]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return { list: [...new Set(list)], error: list.length ? null : '答案为空' };
 }
 
 function parseTags(raw) {
@@ -316,7 +302,7 @@ rows.forEach((row, index) => {
   const type = parseType(typeRaw, options);
 
   if (!type) {
-    errors.push(`第 ${lineNo} 行: 题型「${typeRaw}」无法识别（可用：单选/多选/判断/填空/简答）`);
+    errors.push(`第 ${lineNo} 行: 题型「${typeRaw}」无法识别（可用：单选/多选/判断/简答/论述）`);
     return;
   }
 
@@ -373,14 +359,6 @@ rows.forEach((row, index) => {
     }
     q.type = 'judge';
     q.options = ['正确', '错误'];
-    q.answer = list;
-  } else if (type === 'fill') {
-    const { list, error } = parseFillAnswer(answerRaw);
-    if (error) {
-      errors.push(`第 ${lineNo} 行: ${error}`);
-      return;
-    }
-    q.type = 'fill';
     q.answer = list;
   } else {
     // 主观题：简答 / 论述分开保留，两者的分值与作答要求不同
@@ -546,9 +524,9 @@ body.push(' *');
 body.push(' * 题型与字段：');
 body.push(" *   single   单选：options[string[]] + answer[string[]]（字母）");
 body.push(" *   multiple 多选：同上，answer 多项，全对才得分");
-body.push(" *   judge    判断：options 固定 ['正确','错误']，answer 为 ['A'](对) 或 ['B'](错)");
-body.push(' *   fill     填空：answer 为可接受答案数组，命中任一即算对');
+body.push(' *   judge    判断：options 固定 [\'正确\',\'错误\']，answer 为 [\'A\'](对) 或 [\'B\'](错)');
 body.push(' *   short    简答：answerText 为参考答案，不自动判分');
+body.push(' *   essay    论述：answerText 为参考答案，不自动判分');
 body.push(' *');
 body.push(' * 修改题库请改源表格后重新运行导入脚本，不要直接手改本文件。');
 body.push(' */');
@@ -597,8 +575,8 @@ body.push('export const TYPE_LABEL = {');
 body.push("  single: '单选题',");
 body.push("  multiple: '多选题',");
 body.push("  judge: '判断题',");
-body.push("  fill: '填空题',");
 body.push("  short: '简答题',");
+body.push("  essay: '论述题',");
 body.push('};');
 body.push('');
 
@@ -608,13 +586,13 @@ const output = body.join('\n');
 /* 统计与写出                                                          */
 /* ------------------------------------------------------------------ */
 
-const stats = { single: 0, multiple: 0, judge: 0, fill: 0, short: 0 };
+const stats = { single: 0, multiple: 0, judge: 0, short: 0, essay: 0 };
 for (const q of finalQuestions) stats[q.type] += 1;
 const diffStats = { easy: 0, medium: 0, hard: 0 };
 for (const q of finalQuestions) diffStats[q.difficulty] += 1;
 
 console.log(`\n  解析结果: ${finalQuestions.length} 题`);
-console.log(`    题型: 单选 ${stats.single} / 多选 ${stats.multiple} / 判断 ${stats.judge} / 填空 ${stats.fill} / 简答 ${stats.short}`);
+console.log(`    题型: 单选 ${stats.single} / 多选 ${stats.multiple} / 判断 ${stats.judge} / 简答 ${stats.short} / 论述 ${stats.essay}`);
 console.log(`    难度: 简单 ${diffStats.easy} / 中等 ${diffStats.medium} / 困难 ${diffStats.hard}`);
 console.log(`    章节: ${finalChapters.map((c) => `${c.name}(${byChapter.get(c.id)?.length || 0})`).join('  ')}`);
 
